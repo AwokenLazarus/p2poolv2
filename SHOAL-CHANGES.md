@@ -14,7 +14,7 @@ kept as they were. Every file Shoal modified carries a "Modified by the Shoal pr
 under its original header. Shoal's own changes are offered under the same terms.
 
 ## Base
-Upstream tag `v0.16.3` (`a6f39146`). Shoal's work lives on `shoal/*` branches; `master` follows
+Upstream tag `v0.16.3` (`a6f39146`). Shoal's work lives on `shoal/*` branches; `main` follows
 upstream unchanged.
 
 ## Changes (branch `shoal/xbt-header`)
