@@ -31,6 +31,7 @@ pub struct GenesisData {
 
 // Bitcoin signet genesis block (height 0), hash
 // 00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6.
+// Shoal: an XBT v2 block; see test_signet_genesis_block_hash.
 const SIGNET_GENESIS_DATA: GenesisData = GenesisData {
     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
     bitcoin_block: include_bytes!("signet.dat"),
@@ -40,6 +41,8 @@ const SIGNET_GENESIS_DATA: GenesisData = GenesisData {
 
 // Testnet4 block hash 0000000000a57b6dd9b7340a2e2cbb7069a0ccdf28f3db69070ea89d7287444b,
 // mined on previousblockhash 0000000000652fb23ade2b38f96257dc2b7d2cb487cc2344cac2d2546e5ceec5.
+// Shoal: still upstream's Bitcoin anchor. An XBT node refuses it (v1 header), so Shoal cannot
+// run on testnet4 until a real XBT testnet4 block is chosen here (phase 3).
 const TESTNET4_GENESIS_DATA: GenesisData = GenesisData {
     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
     bitcoin_block: include_bytes!("testnet4.dat"),
@@ -49,6 +52,8 @@ const TESTNET4_GENESIS_DATA: GenesisData = GenesisData {
 
 // Mainnet block hash 000000000000000000006fa29653a523d531657ad20d6f946d0fef88c97cd935,
 // mined on previousblockhash 00000000000000000001414ee2ca686bd8dc13a40f02d94ff96cb1279dac64aa.
+// Shoal: still upstream's Bitcoin anchor, deliberately: an XBT node refuses it (v1 header), so
+// Shoal cannot run on mainnet until an XBT mainnet anchor is chosen.
 const MAINNET_GENESIS_DATA: GenesisData = GenesisData {
     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
     bitcoin_block: include_bytes!("main.dat"),
@@ -86,17 +91,21 @@ mod tests {
     use bitcoin::{Block, BlockHash};
     use std::str::FromStr;
 
+    /// Shoal: XBT has no signet; Shoal's signet sharechain (used by upstream's tests) anchors to
+    /// a deterministic XBT v2 block built like the regtest one, from Bitcoin's signet genesis
+    /// coinbase, time and bits (`regtest_genesis -- signet.dat signet`).
     #[test]
     fn test_signet_genesis_block_hash() {
         let genesis = genesis_data(bitcoin::Network::Signet).unwrap();
-        let block = deserialize::<Block>(genesis.bitcoin_block).unwrap();
+        let block = deserialize::<shoal_header::XbtBlock>(genesis.bitcoin_block).unwrap();
 
         assert_eq!(
             block.block_hash(),
-            BlockHash::from_str("00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6")
+            BlockHash::from_str("00000058ff90205bf876b495ec72ead257297a64c3bd8478b4eda0b9a8b15bbc")
                 .unwrap()
         );
         assert!(block.check_merkle_root());
+        assert!(block.header.validate_pow(block.header.target()).is_ok());
     }
 
     #[test]

@@ -12,12 +12,22 @@
 //! regtest, which gets regtest-easy targets.
 //!
 //! The network is fixed for the life of a node process, so it is set once at start-up
-//! ([`set_network`]), like `sim_overrides`. Unset (e.g. in unit tests), upstream's values apply.
+//! ([`set_network`]), like `sim_overrides`. Unset, upstream's values apply.
+//!
+//! Under `cfg(test)` the setting is per thread, so unit tests (which share one process) can use
+//! regtest parameters without changing them for tests running beside them.
 
 use bitcoin::{CompactTarget, Network};
+#[cfg(not(test))]
 use std::sync::OnceLock;
 
+#[cfg(not(test))]
 static NETWORK: OnceLock<Network> = OnceLock::new();
+
+#[cfg(test)]
+thread_local! {
+    static TEST_NETWORK: std::cell::Cell<Option<Network>> = const { std::cell::Cell::new(None) };
+}
 
 /// The easiest share target on regtest: the same as Bitcoin/XBT regtest's block target.
 pub const REGTEST_MAX_POOL_TARGET: u32 = 0x207f_ffff;
@@ -29,12 +39,36 @@ pub const REGTEST_ANCHOR_TARGET: u32 = 0x1e0f_ffff;
 /// Record the node's network. The first call wins; later calls with another network are
 /// ignored and return false.
 pub fn set_network(network: Network) -> bool {
-    NETWORK.get_or_init(|| network) == &network
+    #[cfg(not(test))]
+    {
+        NETWORK.get_or_init(|| network) == &network
+    }
+    #[cfg(test)]
+    {
+        TEST_NETWORK.with(|n| match n.get() {
+            Some(existing) => existing == network,
+            None => {
+                n.set(Some(network));
+                true
+            }
+        })
+    }
+}
+
+fn network() -> Option<Network> {
+    #[cfg(not(test))]
+    {
+        NETWORK.get().copied()
+    }
+    #[cfg(test)]
+    {
+        TEST_NETWORK.with(|n| n.get())
+    }
 }
 
 /// True when this process runs a regtest sharechain.
 pub fn is_regtest() -> bool {
-    NETWORK.get() == Some(&Network::Regtest)
+    network() == Some(Network::Regtest)
 }
 
 /// The easiest target a share may declare on this node's network.
@@ -69,5 +103,18 @@ mod tests {
         assert!(regtest_max > upstream);
         assert!(regtest_anchor > upstream && regtest_anchor < regtest_max);
         assert_eq!(anchor_target(Network::Testnet4).to_consensus(), 0x1b41_88f5);
+    }
+
+    #[test]
+    fn network_setting_is_per_test_thread_and_first_call_wins() {
+        assert!(!is_regtest());
+        assert_eq!(max_pool_target(), crate::shares::share_block::MAX_POOL_TARGET);
+        assert!(set_network(Network::Regtest));
+        assert!(is_regtest());
+        assert_eq!(max_pool_target(), REGTEST_MAX_POOL_TARGET);
+        assert!(!set_network(Network::Testnet4), "a second network is refused");
+        assert!(is_regtest());
+        let other_thread = std::thread::spawn(is_regtest).join().unwrap();
+        assert!(!other_thread, "another test thread keeps upstream values");
     }
 }
