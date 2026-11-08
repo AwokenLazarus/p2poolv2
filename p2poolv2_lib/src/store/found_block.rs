@@ -173,7 +173,6 @@ fn decode_found_block(key: &[u8], value: &[u8]) -> Result<FoundBlock, StoreError
 mod tests {
     use super::*;
     use crate::test_utils::TestShareBlockBuilder;
-    use bitcoin::blockdata::constants::genesis_block;
     use tempfile::tempdir;
 
     #[test]
@@ -191,7 +190,7 @@ mod tests {
             .prev_share_blockhash(genesis.block_hash().to_string())
             .nonce(0xe9695792)
             .build();
-        share.header.bitcoin_header = genesis_block(bitcoin::Network::Regtest).header;
+        share.header.bitcoin_header = shoal_header::XbtHeader::regtest_test_header();
         store.push_to_confirmed_chain(&share).unwrap();
 
         let found_blocks = store.get_found_blocks().unwrap();
@@ -252,7 +251,7 @@ mod tests {
             .prev_share_blockhash(genesis.block_hash().to_string())
             .nonce(0xe9695793)
             .build();
-        uncle.header.bitcoin_header = genesis_block(bitcoin::Network::Regtest).header;
+        uncle.header.bitcoin_header = shoal_header::XbtHeader::regtest_test_header();
         store.push_to_candidate_chain(&uncle).unwrap();
         let mut batch = Store::get_write_batch();
         store.add_share_block(&uncle, &mut batch).unwrap();
@@ -298,7 +297,7 @@ mod tests {
             .prev_share_blockhash(genesis.block_hash().to_string())
             .nonce(0xe9695792)
             .build();
-        share.header.bitcoin_header = genesis_block(bitcoin::Network::Regtest).header;
+        share.header.bitcoin_header = shoal_header::XbtHeader::regtest_test_header();
         store.push_to_candidate_chain(&share).unwrap();
         assert!(!store.share_block_exists(&share.block_hash()));
 

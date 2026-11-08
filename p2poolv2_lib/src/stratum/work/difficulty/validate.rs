@@ -6,7 +6,7 @@ use crate::stratum::error::Error;
 use crate::stratum::messages::SimpleRequest;
 use crate::stratum::work::gbt::compute_merkle_root_from_branches;
 use crate::stratum::work::tracker::JobDetails;
-use bitcoin::blockdata::block::Header;
+use shoal_header::XbtHeader as Header;
 use bitcoin::consensus::Decodable;
 use hex::FromHex;
 use std::str::FromStr;
@@ -118,6 +118,7 @@ pub fn validate_bitcoin_difficulty(
             16,
         )
         .map_err(|_| Error::InvalidParams("Bad nonce".into()))?,
+        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
     };
 
     let meets_bitcoin_difficulty = match header.validate_pow(target) {

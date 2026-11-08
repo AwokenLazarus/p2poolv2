@@ -28,8 +28,9 @@ use crate::shares::transactions::coinbase::build_sharechain_coinbase_transaction
 #[cfg(any(test, feature = "test-utils"))]
 use bitcoin::hashes::Hash;
 #[cfg(any(test, feature = "test-utils"))]
+use shoal_header::{XbtBlock as Block, XbtHeader as Header};
 use bitcoin::{
-    Address, Block, BlockHash, CompactTarget, CompressedPublicKey, Transaction, block::Header,
+    Address, BlockHash, CompactTarget, CompressedPublicKey, Transaction,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use std::str::FromStr;
@@ -631,6 +632,7 @@ pub fn build_block_from_work_components(path: &str, nsecs: u64) -> ShareBlock {
         time: u32::from_str_radix(submit.params[3].as_ref().unwrap(), 16).unwrap(),
         bits: CompactTarget::from_unprefixed_hex(&template.bits).unwrap(),
         nonce: u32::from_str_radix(submit.params[4].as_ref().unwrap(), 16).unwrap(),
+        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
     };
 
     let share_header = ShareHeader {
@@ -914,6 +916,7 @@ fn test_share_block(
                     time: 0x01e0377ae,
                     bits: share_bits,
                     nonce: nonce.unwrap_or(0xe9695791),
+                    v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
                 },
                 coinbase_proof,
                 bitcoin_coinbase,
@@ -1020,6 +1023,7 @@ impl TestShareHeaderBuilder {
                 time: 1700000000u32,
                 bits: CompactTarget::from_consensus(0x1b4188f5),
                 nonce: 0,
+                v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
             },
             time: 1700000000u32,
             bits: CompactTarget::from_consensus(0x1b4188f5),

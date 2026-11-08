@@ -17,7 +17,8 @@ use crate::stratum::{
         tracker::JobId,
     },
 };
-use bitcoin::{block::Header, blockdata::block::Block, hashes::Hash};
+use bitcoin::hashes::Hash;
+use shoal_header::{XbtBlock as Block, XbtHeader as Header};
 use bitcoindrpc::BitcoindRpcClient;
 use serde_json::json;
 use std::time::SystemTime;

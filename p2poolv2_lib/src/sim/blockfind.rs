@@ -18,7 +18,7 @@
 use crate::stratum::message_handlers::submit::{build_full_block, submit_block};
 use crate::stratum::work::block_template::BlockTemplate;
 use bitcoin::BlockHash;
-use bitcoin::block::Header;
+use shoal_header::XbtHeader as Header;
 use bitcoindrpc::BitcoindRpcClient;
 use tracing::{info, warn};
 

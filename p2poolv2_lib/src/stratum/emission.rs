@@ -6,7 +6,7 @@ use crate::shares::coinbase_proof::CoinbaseProof;
 use crate::shares::share_commitment::ShareCommitment;
 use crate::stratum::work::block_template::BlockTemplate;
 use bitcoin::Transaction;
-use bitcoin::block::Header;
+use shoal_header::XbtHeader as Header;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 

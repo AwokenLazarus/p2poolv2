@@ -42,6 +42,7 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 zmq = { workspace = true }
 bitcoin = { workspace = true }
+shoal-header = { path = "../../shoal/crates/shoal-header" }
 p2poolv2_wallet = { workspace = true }
 bitcoinconsensus = { workspace = true }
 base64 = { workspace = true }

@@ -83,7 +83,7 @@ mod tests {
     use crate::store::writer::StoreError;
     use crate::stratum::work::block_template::BlockTemplate;
     use crate::test_utils::{create_test_commitment, test_coinbase_transaction};
-    use bitcoin::block::Header;
+    use shoal_header::XbtHeader as Header;
     use bitcoin::hashes::Hash;
     use bitcoin::{BlockHash, CompactTarget};
     use bitcoin::{Transaction, absolute::LockTime, transaction::Version};
@@ -126,6 +126,7 @@ mod tests {
             time: 1700000000,
             bits: CompactTarget::from_consensus(0x1b4188f5),
             nonce: 12345,
+            v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
         };
 
         let commitment = create_test_commitment();
@@ -264,6 +265,7 @@ mod tests {
             time: 1700000000,
             bits: CompactTarget::from_consensus(0x1b4188f5),
             nonce: 12345,
+            v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
         };
 
         // Create a valid template transaction by serializing a real Transaction

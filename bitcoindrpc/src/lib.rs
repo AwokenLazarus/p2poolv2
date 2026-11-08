@@ -314,7 +314,10 @@ impl BitcoindRpcClient {
         }
     }
 
-    pub async fn submit_block(&self, block: &bitcoin::Block) -> Result<String, BitcoindRpcError> {
+    pub async fn submit_block<B: bitcoin::consensus::Encodable>(
+        &self,
+        block: &B,
+    ) -> Result<String, BitcoindRpcError> {
         // Serialize the block to hex string
         let block_hex = serialize_hex(block);
 

@@ -471,13 +471,14 @@ mod tests {
         .unwrap()
         .into();
 
-        let bitcoin_header = bitcoin::block::Header {
+        let bitcoin_header = shoal_header::XbtHeader {
             version: bitcoin::block::Version::from_consensus(template.version),
             prev_blockhash: BlockHash::from_str(&template.previousblockhash).unwrap(),
             merkle_root: template_merkle_root,
             time: 1700000000,
             bits: CompactTarget::from_unprefixed_hex(&template.bits).unwrap(),
             nonce: 0,
+            v2: shoal_header::V2Fields::default(),
         };
 
         //* The share coinbase depends on the bitcoin header, so it is built

@@ -20,7 +20,7 @@ use crate::stratum::work::difficulty::validate::build_coinbase_from_components;
 use crate::stratum::work::gbt::compute_merkle_root_from_branches;
 use crate::stratum::work::prepared_notify::{PreparedNotifyParams, build_notify_from_prepared};
 use crate::stratum::work::tracker::JobTracker;
-use bitcoin::block::Header;
+use shoal_header::XbtHeader as Header;
 use bitcoin::{Address, BlockHash, CompactTarget};
 use std::str::FromStr;
 
@@ -112,6 +112,7 @@ pub fn build_sim_emission(params: SimShareParams<'_>) -> Result<BuiltShare, SimS
         time: params.ntime,
         bits,
         nonce: params.nonce,
+        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
     };
 
     let share_commitment = job

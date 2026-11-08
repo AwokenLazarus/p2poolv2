@@ -16,11 +16,11 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{
     Address, BlockHash, CompactTarget, CompressedPublicKey, Target, Transaction, TxMerkleNode,
     Txid, VarInt, WitnessProgram,
-    block::Header,
     consensus::{Decodable, Encodable},
     hashes::Hash,
 };
 use core::mem;
+use shoal_header::XbtHeader as Header;
 use p2poolv2_wallet::witness_program_codec;
 use serde::{Deserialize, Serialize};
 pub use share_transaction::{
@@ -262,6 +262,7 @@ impl ShareHeader {
         len += self.bitcoin_header.time.consensus_encode(w)?;
         len += self.bitcoin_header.bits.consensus_encode(w)?;
         len += self.bitcoin_header.nonce.consensus_encode(w)?;
+        len += self.bitcoin_header.v2.consensus_encode(w)?;
         len += self.bits.consensus_encode(w)?;
         len += self.time.consensus_encode(w)?;
         len += encode_optional_address(&self.donation_address, w)?;
@@ -297,6 +298,7 @@ impl ShareHeader {
             time: u32::consensus_decode(r)?,
             bits: CompactTarget::consensus_decode(r)?,
             nonce: u32::consensus_decode(r)?,
+            v2: shoal_header::V2Fields::consensus_decode(r)?,
         };
         let bits = CompactTarget::consensus_decode(r)?;
         let time = u32::consensus_decode(r)?;
@@ -467,7 +469,7 @@ impl ShareBlock {
         )?
         .witness_program();
         // panic here, as if the genesis block is bad, we bail at the start of the process
-        let bitcoin_block: bitcoin::Block =
+        let bitcoin_block: shoal_header::XbtBlock =
             match bitcoin::consensus::deserialize(genesis_data.bitcoin_block) {
                 Ok(block) => block,
                 Err(e) => {
@@ -699,7 +701,7 @@ mod tests {
         // construction, so it reads as a found bitcoin block.
         let mut block_share = TestShareBlockBuilder::new().build();
         block_share.header.bitcoin_header =
-            bitcoin::blockdata::constants::genesis_block(bitcoin::Network::Regtest).header;
+            shoal_header::XbtHeader::regtest_test_header();
         assert!(block_share.is_bitcoin_block());
     }
 
