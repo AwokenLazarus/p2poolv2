@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 use crate::stratum::work::error::WorkError;
 use bitcoin::script::PushBytesBuf;
@@ -22,6 +25,9 @@ pub struct TemplateTransaction {
 /// Struct representing the getblocktemplate response from Bitcoin Core
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BlockTemplate<T = TemplateTransaction> {
+    /// Shoal: XBT reports the version with the header-v2 flag (0x80000000) set; it is
+    /// stripped here, and the XBT header encoder always sets it again.
+    #[serde(deserialize_with = "crate::stratum::work::xbt::deserialize_template_version")]
     pub version: i32,
     pub rules: Vec<String>,
     pub vbavailable: std::collections::HashMap<String, i32>,

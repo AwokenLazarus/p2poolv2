@@ -1,10 +1,16 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 mod bitcoin_block_validation;
 
-use super::share_block::{MAX_POOL_TARGET, ShareHeader};
+// Shoal: still used by upstream's tests; production code reads xbt_params::max_pool_target().
+#[allow(unused_imports)]
+use super::share_block::MAX_POOL_TARGET;
+use super::share_block::ShareHeader;
 use crate::accounting::OutputPair;
 use crate::accounting::payout::payout_distribution::{
     append_proportional_distribution, include_address_and_cut,
@@ -1181,7 +1187,10 @@ impl ShareValidator for DefaultShareValidator {
         }
 
         let declared_target = Target::from_compact(share_header.bits);
-        let max_pool_target = Target::from_compact(CompactTarget::from_consensus(MAX_POOL_TARGET));
+        // Shoal: per-network floor (regtest-easy on regtest); see xbt_params.
+        let max_pool_target = Target::from_compact(CompactTarget::from_consensus(
+            crate::xbt_params::max_pool_target(),
+        ));
         if declared_target > max_pool_target {
             return Err(ValidationError::consensus(format!(
                 "Share target {declared_target} is easier than maximum pool target {max_pool_target}"

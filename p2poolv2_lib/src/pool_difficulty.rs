@@ -1,12 +1,17 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 #[cfg(test)]
 #[mockall_double::double]
 use crate::shares::chain::chain_store_handle::ChainStoreHandle;
 #[cfg(not(test))]
 use crate::shares::chain::chain_store_handle::ChainStoreHandle;
+// Shoal: still used by upstream's tests; production code reads xbt_params::max_pool_target().
+#[allow(unused_imports)]
 use crate::shares::share_block::MAX_POOL_TARGET;
 use bitcoin::{CompactTarget, Target};
 use std::error::Error;
@@ -33,6 +38,16 @@ use crate::sim_overrides;
 /// serves as the ceiling for the share chain target. Stored as u32 because
 /// `CompactTarget::from_consensus` is not a const fn.
 const MAX_TARGET_CONSENSUS: u32 = 0x1b4188f5;
+
+/// Shoal: the ASERT ceiling for this node's network. Upstream's value everywhere except
+/// regtest, which gets the regtest-easy ceiling (see `xbt_params`).
+fn max_target_consensus() -> u32 {
+    if crate::xbt_params::is_regtest() {
+        crate::xbt_params::REGTEST_MAX_POOL_TARGET
+    } else {
+        MAX_TARGET_CONSENSUS
+    }
+}
 
 /// Fixed-point radix for the ASERT exponent representation (2^16)
 const RADIX: i64 = 65536;
@@ -83,7 +98,7 @@ pub(crate) fn asert_calculate_target(
     ideal_block_time: u32,
 ) -> CompactTarget {
     let max_target = target_to_u512(Target::from_compact(CompactTarget::from_consensus(
-        MAX_TARGET_CONSENSUS,
+        max_target_consensus(),
     )));
 
     // Step 1: Compute exponent in 16.16 fixed-point format.
@@ -125,7 +140,7 @@ pub(crate) fn asert_calculate_target(
     if num_shifts >= 0 {
         let available_bits = 512 - next_target.bits();
         if num_shifts as usize > available_bits {
-            return CompactTarget::from_consensus(MAX_TARGET_CONSENSUS);
+            return CompactTarget::from_consensus(max_target_consensus());
         }
         next_target <<= num_shifts as usize;
     } else {
@@ -286,7 +301,9 @@ impl PoolDifficulty {
     ) -> CompactTarget {
         let asert_target = self.calculate_target(block_parent_time, block_parent_height);
 
-        let max_pool_target_compact = CompactTarget::from_consensus(MAX_POOL_TARGET);
+        // Shoal: per-network floor (regtest-easy on regtest); see xbt_params.
+        let max_pool_target_compact =
+            CompactTarget::from_consensus(crate::xbt_params::max_pool_target());
         let max_pool_target = Target::from_compact(max_pool_target_compact);
 
         let result_target = Target::from_compact(asert_target);

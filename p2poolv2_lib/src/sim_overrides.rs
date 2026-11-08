@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 //! Compile-time bridge for sim vs production behavior.
 //!
@@ -145,7 +148,13 @@ pub fn anchor_target() -> CompactTarget {
     }
     #[cfg(not(feature = "sim"))]
     {
-        CompactTarget::from_consensus(0x1b4188f5)
+        // Shoal: per-network anchor (regtest-easy on regtest); see xbt_params.
+        let network = if crate::xbt_params::is_regtest() {
+            bitcoin::Network::Regtest
+        } else {
+            bitcoin::Network::Bitcoin
+        };
+        crate::xbt_params::anchor_target(network)
     }
 }
 

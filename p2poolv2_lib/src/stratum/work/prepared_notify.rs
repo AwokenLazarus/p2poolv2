@@ -100,6 +100,9 @@ fn split_coinbase2(
 /// The commitment encoding is split into a prefix (fields before time) and a
 /// suffix (fields after time), so that per-share hashing inserts a fresh 4-byte
 /// timestamp between them without rebuilding the whole commitment.
+// Shoal: the Bitcoin-dialect JSON template fields are unused on XBT (notify is built per miner
+// by shoal_stratum); kept for upstream parity.
+#[allow(dead_code)]
 pub struct PreparedNotifyParams {
     /// Pre-serialized JSON notify string with placeholder job_id and coinbase2
     json_template: String,

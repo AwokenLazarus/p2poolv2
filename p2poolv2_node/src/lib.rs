@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 //! P2Poolv2 node library.
 //!
@@ -155,6 +158,8 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
     let exit_sender = watch::Sender::new(ShutdownReason::None);
     let sig_handle = setup_signal_handler(exit_sender.clone());
 
+    // Shoal: per-network sharechain parameters must be fixed before genesis is built.
+    p2poolv2_lib::xbt_params::set_network(config.stratum.network);
     let genesis = ShareBlock::build_genesis_for_network(config.stratum.network).unwrap();
     let store = Arc::new(Store::new(config.store.path.clone(), false).unwrap());
 

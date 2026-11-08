@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 use crate::node::messages::ShareHeaderBatch;
 use crate::node::p2p_message_handlers::MAX_HEADERS_IN_RESPONSE;
@@ -17,9 +20,11 @@ use crate::pool_difficulty::PoolDifficulty;
 use crate::shares::chain::chain_store_handle::ChainStoreHandle;
 #[cfg(not(test))]
 use crate::shares::chain::chain_store_handle::ChainStoreHandle;
-use crate::shares::share_block::{
-    MAX_POOL_TARGET, MIN_CUMULATIVE_CHAIN_WORK_MULTIPLIER, ShareHeader,
-};
+// Shoal: MAX_POOL_TARGET is still used by upstream's tests; production code reads
+// xbt_params::max_pool_target().
+#[allow(unused_imports)]
+use crate::shares::share_block::MAX_POOL_TARGET;
+use crate::shares::share_block::{MIN_CUMULATIVE_CHAIN_WORK_MULTIPLIER, ShareHeader};
 use crate::shares::validation::ShareValidator;
 use crate::store::block_tx_metadata::BlockMetadata;
 use crate::store::dag_store::MAX_BLOCKS_PER_HEIGHT;
@@ -503,7 +508,9 @@ fn validate_cumulative_work(
     batch_chain_work: Work,
 ) -> Result<(), HeaderSyncError> {
     let single_share_work =
-        Target::from_compact(CompactTarget::from_consensus(MAX_POOL_TARGET)).to_work();
+        // Shoal: per-network floor (regtest-easy on regtest); see xbt_params.
+        Target::from_compact(CompactTarget::from_consensus(crate::xbt_params::max_pool_target()))
+            .to_work();
     let zero_work = Work::from_hex("0x00").unwrap();
     let min_cumulative_work = (0..MIN_CUMULATIVE_CHAIN_WORK_MULTIPLIER)
         .fold(zero_work, |accumulated, _| accumulated + single_share_work);

@@ -65,3 +65,46 @@ pub fn job_header(
         txcount,
     }))
 }
+
+/// The XBT header-v2 flag in a block version.
+const VERSION_V2_FLAG: u32 = 0x8000_0000;
+
+/// Deserialize `getblocktemplate`'s `version`, which XBT reports with the header-v2 flag set
+/// (e.g. `0xa0000000`, above `i32::MAX`). The flag is not part of the BIP9 version; it is
+/// stripped, and the XBT header encoder always sets it.
+pub fn deserialize_template_version<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = <i64 as serde::Deserialize>::deserialize(deserializer)?;
+    let raw = u32::try_from(raw)
+        .or_else(|_| i32::try_from(raw).map(|v| v as u32))
+        .map_err(|_| serde::de::Error::custom(format!("block version {raw} out of range")))?;
+    Ok((raw & !VERSION_V2_FLAG) as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(serde::Deserialize)]
+    struct V {
+        #[serde(deserialize_with = "deserialize_template_version")]
+        version: i32,
+    }
+
+    fn parse(json: &str) -> Result<i32, serde_json::Error> {
+        serde_json::from_str::<V>(json).map(|v| v.version)
+    }
+
+    #[test]
+    fn xbt_template_version_has_its_v2_flag_stripped() {
+        assert_eq!(parse(r#"{"version": 2684354560}"#).unwrap(), 0x2000_0000);
+        assert_eq!(parse(r#"{"version": 536870912}"#).unwrap(), 0x2000_0000);
+    }
+
+    #[test]
+    fn out_of_range_template_version_is_refused() {
+        assert!(parse(r#"{"version": 8589934592}"#).is_err());
+    }
+}
