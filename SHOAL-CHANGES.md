@@ -50,6 +50,14 @@ upstream unchanged.
 - Testnet4 and mainnet keep upstream's Bitcoin genesis anchors on purpose: an XBT node refuses
   them (v1 header), so Shoal cannot run on those networks until XBT anchors are chosen.
 
+## Changes (milestone M2: three nodes)
+- Regtest PPLNS window of 12 shares with a maturity of 4 (`xbt_params::pplns_window_shares` and
+  `coinbase_maturity`), so a test run of a few dozen shares slides the window and exercises the
+  maturity skip. Every other network keeps upstream's 120,960 and 6,048.
+- On regtest the PPLNS window cache keeps at least 64 entries past the window
+  (`REGTEST_MIN_WINDOW_BUFFER`), so the short window still pays for forks a few shares deep.
+  Other networks keep upstream's 1% buffer.
+
 ## Test fixtures (XBT)
 Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's
 `remine_session` example. Every proof of work in them is real BLAKE2b:

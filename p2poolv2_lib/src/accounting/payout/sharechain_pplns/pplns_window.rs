@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (2026): per-network window and maturity, minimum cache buffer.
+// See SHOAL-CHANGES.md.
 
 //! Incremental PPLNS window cache for share chain payout computation.
 //!
@@ -95,6 +98,9 @@ const PPLNS_WINDOW_BUFFER_DIVISOR: usize = 4;
 /// Equals 2x `PAYOUT_DEPTH`: one payout depth for full tx validation and one
 /// for PoW-only validation that provides output availability.
 pub const PRUNE_DEPTH: usize = 2 * PAYOUT_DEPTH;
+
+/// Shoal: the fewest extra cached entries past the window on regtest (short window).
+pub const REGTEST_MIN_WINDOW_BUFFER: usize = 64;
 
 /// The gap between the prune height and the prune target, and the size of
 /// one prune chunk: 360 shares, about 1 hour at 10s/block (60 * 6 = 360).
@@ -243,6 +249,8 @@ pub struct PplnsWindow {
     /// Depth a share must reach before it is paid. Defaults to
     /// `COINBASE_MATURITY`.
     maturity_skip: usize,
+    /// Shoal: the fewest entries cached past the window (regtest only; 0 elsewhere).
+    min_buffer: usize,
 }
 
 impl PplnsWindow {
@@ -254,8 +262,14 @@ impl PplnsWindow {
             cached_top_height: None,
             address_keys: AddressKeys::default(),
             network,
-            max_window_shares: PPLNS_WINDOW_SHARES,
-            maturity_skip: COINBASE_MATURITY,
+            // Shoal: regtest uses a short window and maturity so a test run slides the window.
+            max_window_shares: crate::xbt_params::pplns_window_shares(network),
+            maturity_skip: crate::xbt_params::coinbase_maturity(network),
+            min_buffer: if crate::xbt_params::pplns_window_shares(network) < PPLNS_WINDOW_SHARES {
+                REGTEST_MIN_WINDOW_BUFFER
+            } else {
+                0
+            },
         }
     }
 
@@ -791,7 +805,12 @@ impl PplnsWindow {
     fn cache_capacity(&self) -> usize {
         self.maturity_skip
             + self.max_window_shares
-            + self.max_window_shares.div_ceil(PPLNS_WINDOW_BUFFER_DIVISOR)
+            + self
+                .max_window_shares
+                .div_ceil(PPLNS_WINDOW_BUFFER_DIVISOR)
+                // Shoal: a floor on regtest, so its short window still pays for forks a few
+                // shares deep. Zero on every other network.
+                .max(self.min_buffer)
     }
 
     /// Trim the oldest confirmed entries down to `cache_capacity`.

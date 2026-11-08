@@ -88,6 +88,34 @@ pub fn anchor_target(network: Network) -> CompactTarget {
     }
 }
 
+/// PPLNS window on regtest, in shares: short, so a test run of a few dozen shares slides it.
+pub const REGTEST_PPLNS_WINDOW_SHARES: usize = 12;
+
+/// Share depth before a share is paid on regtest (upstream's `COINBASE_MATURITY`, 6,048).
+pub const REGTEST_COINBASE_MATURITY: usize = 4;
+
+/// Shares a found block pays on `network`.
+///
+/// Every node of one sharechain runs the same network, so they all compute the same window.
+pub fn pplns_window_shares(network: Network) -> usize {
+    use crate::accounting::payout::sharechain_pplns::pplns_window::PPLNS_WINDOW_SHARES;
+    if network == Network::Regtest && !cfg!(feature = "sim") {
+        REGTEST_PPLNS_WINDOW_SHARES
+    } else {
+        PPLNS_WINDOW_SHARES
+    }
+}
+
+/// Depth a share must reach before a found block pays it on `network`.
+pub fn coinbase_maturity(network: Network) -> usize {
+    use crate::accounting::payout::sharechain_pplns::pplns_window::COINBASE_MATURITY;
+    if network == Network::Regtest && !cfg!(feature = "sim") {
+        REGTEST_COINBASE_MATURITY
+    } else {
+        COINBASE_MATURITY
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +131,19 @@ mod tests {
         assert!(regtest_max > upstream);
         assert!(regtest_anchor > upstream && regtest_anchor < regtest_max);
         assert_eq!(anchor_target(Network::Testnet4).to_consensus(), 0x1b41_88f5);
+    }
+
+    #[test]
+    fn only_regtest_gets_the_short_window() {
+        use crate::accounting::payout::sharechain_pplns::pplns_window::{
+            COINBASE_MATURITY, PPLNS_WINDOW_SHARES,
+        };
+        assert_eq!(pplns_window_shares(Network::Regtest), REGTEST_PPLNS_WINDOW_SHARES);
+        assert_eq!(coinbase_maturity(Network::Regtest), REGTEST_COINBASE_MATURITY);
+        for network in [Network::Bitcoin, Network::Testnet4, Network::Signet] {
+            assert_eq!(pplns_window_shares(network), PPLNS_WINDOW_SHARES);
+            assert_eq!(coinbase_maturity(network), COINBASE_MATURITY);
+        }
     }
 
     #[test]
