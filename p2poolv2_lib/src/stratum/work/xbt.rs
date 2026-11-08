@@ -66,6 +66,27 @@ pub fn job_header(
     }))
 }
 
+/// Test helper: the XBT notify a job must produce, rebuilt from the job's tracked coinbase.
+/// Asserts the notify is the Sia-profile dialect and commits to exactly that coinbase.
+#[cfg(test)]
+pub(crate) fn assert_notify_matches_job(
+    notify: &crate::stratum::messages::Notify,
+    job: &crate::stratum::work::tracker::JobDetails,
+) {
+    let coinbase = zero_extranonce_coinbase(&job.coinbase1, &job.coinbase2).unwrap();
+    let header = job_header(&job.blocktemplate, &coinbase, &job.template_merkle_branches).unwrap();
+    let p = &notify.params;
+    assert_eq!(p.coinbase1, shoal_stratum::coinb1_hex(&header), "coinb1 carries h2 of the job");
+    assert_eq!(p.coinbase1.len(), 78, "39-byte Sia coinb1");
+    assert!(p.coinbase1.starts_with("000000") && p.coinbase1.ends_with("00000000"));
+    assert_eq!(p.coinbase2, "", "XBT notify has no coinbase2");
+    assert!(p.merkle_branches.is_empty(), "XBT notify has no merkle branches");
+    assert_eq!(p.version, "", "XBT notify sends no version");
+    assert_eq!(p.prevhash, shoal_stratum::prevhash_hex(&header));
+    assert_eq!(p.nbits, shoal_stratum::nbits_hex(&header));
+    assert_eq!(p.ntime, "0000000000000000");
+}
+
 /// The XBT header-v2 flag in a block version.
 const VERSION_V2_FLAG: u32 = 0x8000_0000;
 

@@ -229,7 +229,8 @@ mod tests {
     /// unchanged, so nodes on the old chain cannot negotiate with new ones.
     #[test]
     fn test_protocol_string_differs_when_genesis_differs_on_same_network() {
-        let genesis_hash = ShareBlock::build_genesis_for_network(bitcoin::Network::Testnet4)
+        // Shoal: Regtest in place of Testnet4, which has no XBT anchor yet.
+        let genesis_hash = ShareBlock::build_genesis_for_network(bitcoin::Network::Regtest)
             .unwrap()
             .block_hash();
         let other_genesis_hash = ShareBlock::build_genesis_for_network(bitcoin::Network::Signet)

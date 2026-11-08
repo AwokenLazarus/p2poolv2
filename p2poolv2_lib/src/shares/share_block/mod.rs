@@ -741,7 +741,8 @@ mod tests {
         );
         assert_eq!(
             share.header.bitcoin_header.block_hash().to_string(),
-            "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+            // Shoal: the XBT signet anchor (see shares/genesis).
+            "00000058ff90205bf876b495ec72ead257297a64c3bd8478b4eda0b9a8b15bbc"
         );
     }
 
@@ -934,6 +935,9 @@ mod tests {
 
     #[test]
     fn test_fixture_coinbase_reconstruction_matches_bitcoin_merkle_root() {
+        // Shoal: the share_sync fixtures are a real XBT regtest chain, mined with regtest
+        // sharechain parameters.
+        crate::xbt_params::set_network(bitcoin::Network::Regtest);
         let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../p2poolv2_tests/test_data/share_sync/share_blocks.json");
         let json_string =
@@ -941,7 +945,7 @@ mod tests {
         let blocks: Vec<ShareBlock> =
             serde_json::from_str(&json_string).expect("Failed to parse share_blocks fixture");
 
-        let network = bitcoin::Network::Signet;
+        let network = bitcoin::Network::Regtest; // Shoal: the fixture is an XBT regtest chain
         let difficulty_scale: u128 = 10;
 
         // Build PPLNS distribution matching the production PplnsWindow logic:

@@ -878,7 +878,11 @@ mod tests {
 
         // Verify nsecs and the commitment output were placed in coinbase2.
         // Format: "08" + 16 hex nsecs + middle + "6a20" + 64 hex hash + 8 hex locktime
-        let coinbase2 = params[3].as_str().unwrap();
+        // Shoal: on XBT coinbase2 is in the tracked job; the notify carries h2 instead.
+        let job_id = JobId(u64::from_str_radix(job_id_str, 16).unwrap());
+        let job = tracker_handle.get_job(job_id).expect("job tracked");
+        assert_eq!(params[3].as_str().unwrap(), "", "XBT notify has no coinbase2");
+        let coinbase2 = job.coinbase2.as_str();
         assert!(
             coinbase2.starts_with("08"),
             "coinbase2 should start with the nsecs push opcode"

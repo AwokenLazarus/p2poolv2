@@ -732,6 +732,9 @@ mod tests {
 
     #[test]
     fn test_asert_matches_fixture_share_headers() {
+        // Shoal: the share_sync fixtures are a real XBT regtest chain, mined with regtest
+        // sharechain parameters.
+        crate::xbt_params::set_network(bitcoin::Network::Regtest);
         use crate::shares::share_block::ShareHeader;
 
         let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -802,6 +805,9 @@ mod tests {
     /// - Each non-genesis block's bitcoin header hash meets the share target
     #[test]
     fn test_share_sync_fixture_chain_validity() {
+        // Shoal: the share_sync fixtures are a real XBT regtest chain, mined with regtest
+        // sharechain parameters.
+        crate::xbt_params::set_network(bitcoin::Network::Regtest);
         let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../p2poolv2_tests/test_data/share_sync/share_blocks.json");
         let json_string =

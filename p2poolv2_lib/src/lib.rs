@@ -24,6 +24,7 @@ pub mod sim_overrides;
 pub mod store;
 pub mod stratum;
 pub mod utils;
+pub mod xbt_fixtures;
 pub mod xbt_params;
 
 #[cfg(any(test, feature = "test-utils"))]

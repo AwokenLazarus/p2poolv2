@@ -281,20 +281,21 @@ mod tests {
 
         let notify: Notify = serde_json::from_str(&notify_json).expect("Invalid notify JSON");
 
-        // Compare all fields except job_id (random) and coinbase which has current time component
-        assert_eq!(notify.params.version, "20000000");
-        assert_eq!(notify.params.nbits, "207fffff");
-        assert_eq!(notify.params.ntime, "68300262"); // we use curtime from gbt
+        // Shoal: XBT notify (Sia-profile dialect). The template's fields now live in the job the
+        // tracker holds; the notify commits to them through h2.
         assert!(!notify.params.clean_jobs);
+        assert_eq!(notify.params.nbits, "ffff7f20", "bits 0x207fffff in header byte order");
+        let job_id = JobId(u64::from_str_radix(&notify.params.job_id, 16).unwrap());
+        let job = tracker_handle.get_job(job_id).expect("job tracked");
+        assert_eq!(job.blocktemplate.curtime, 0x68300262, "the job keeps GBT's curtime");
         assert_eq!(
-            notify.params.prevhash,
-            "aadbdeb0c770ef1cc9115a42aa0a34e91732c422c0cd7ddbe71b3d9145f85fa6"
-        );
-
-        assert_eq!(
-            notify.params.merkle_branches,
+            job.template_merkle_branches
+                .iter()
+                .map(|branch| hex::encode(bitcoin::hashes::Hash::to_byte_array(*branch)))
+                .collect::<Vec<_>>(),
             vec!["fecdf8cf1147587b0b3a262b16a955849053c6dfe0239718559f6a3d3ed20523".to_string()]
         );
+        crate::stratum::work::xbt::assert_notify_matches_job(&notify, &job);
     }
 
     /// A template that cannot be prepared ends the notifier rather than leaving
@@ -531,8 +532,9 @@ mod tests {
 
         // Verify notify string is valid JSON
         let notify: Notify = serde_json::from_str(&notify_str).expect("Invalid notify JSON");
-        assert_eq!(notify.params.version, "20000000");
-        assert_eq!(notify.params.nbits, "207fffff");
+        // Shoal: XBT notify (Sia-profile dialect).
+        assert_eq!(notify.params.version, "");
+        assert_eq!(notify.params.nbits, "ffff7f20");
         assert!(!notify.params.clean_jobs);
 
         // Verify the job was inserted in the tracker
@@ -626,7 +628,11 @@ mod tests {
         .expect("Failed to build notify");
 
         let notify: Notify = serde_json::from_str(&notify_json).expect("Invalid notify JSON");
-        let coinbase2_hex = &notify.params.coinbase2;
+        // Shoal: on XBT the coinbase halves are in the tracked job, not the notify.
+        let job_id = JobId(u64::from_str_radix(&notify.params.job_id, 16).unwrap());
+        let job = tracker_handle.get_job(job_id).expect("job tracked");
+        crate::stratum::work::xbt::assert_notify_matches_job(&notify, &job);
+        let coinbase2_hex = &job.coinbase2;
 
         // Extract outputs from coinbase2 and verify they match the original
         let extracted_txouts =

@@ -939,6 +939,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Shoal: testnet4 is locked until it has an XBT anchor, and upstream's DNS seeds are Bitcoin P2Poolv2 peers Shoal must not dial; restore with Shoal seeds (phase 3)"]
     async fn test_dns_seeds_enabled_on_network_with_seeds() {
         let mut config = build_test_config("", None);
         config.stratum.network = bitcoin::Network::Testnet4;
@@ -949,6 +950,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Shoal: testnet4 is locked until it has an XBT anchor, and upstream's DNS seeds are Bitcoin P2Poolv2 peers Shoal must not dial; restore with Shoal seeds (phase 3)"]
     async fn test_dns_seeds_disabled_by_config() {
         let mut config = build_test_config("", None);
         config.stratum.network = bitcoin::Network::Testnet4;

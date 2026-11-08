@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 //! Built-in DNS seeds used to find the first peers when a node has none.
 //! The node queries them once: at startup without dial_peers, or after
@@ -53,14 +56,13 @@ pub(crate) struct DnsSeeds {
 /// For use cases where people run multiple p2poolv2 networks for a
 /// single bitcoin network, they should use dial_peers and set
 /// dns_seed to false in their configs.
+///
+/// Shoal: no network has built-in seeds yet. Upstream's testnet4 seed is a Bitcoin P2Poolv2
+/// host; a Shoal (XBT) node must never query it. Shoal seeds come with its first public
+/// testnet; until then peers are given with `dial_peers`.
 pub(crate) fn dns_seeds_for_network(network: bitcoin::Network) -> Option<DnsSeeds> {
-    match network {
-        bitcoin::Network::Testnet4 => Some(DnsSeeds {
-            hostnames: TESTNET4_SEED_HOSTNAMES,
-            port: TESTNET4_P2P_PORT,
-        }),
-        _ => None,
-    }
+    let _ = (network, TESTNET4_SEED_HOSTNAMES, TESTNET4_P2P_PORT);
+    None
 }
 
 /// How long to wait before querying DNS seeds. Without dial_peers the seeds
@@ -209,11 +211,17 @@ mod tests {
         );
     }
 
+    /// Shoal: upstream's testnet4 seed must never be used by an XBT node.
     #[test]
-    fn dns_seeds_for_network_testnet4_has_seeds() {
-        let seeds = dns_seeds_for_network(bitcoin::Network::Testnet4).unwrap();
-        assert!(!seeds.hostnames.is_empty());
-        assert_eq!(seeds.port, TESTNET4_P2P_PORT);
+    fn dns_seeds_for_network_has_no_upstream_seeds() {
+        for network in [
+            bitcoin::Network::Bitcoin,
+            bitcoin::Network::Testnet4,
+            bitcoin::Network::Signet,
+            bitcoin::Network::Regtest,
+        ] {
+            assert_eq!(dns_seeds_for_network(network), None);
+        }
     }
 
     #[test]
