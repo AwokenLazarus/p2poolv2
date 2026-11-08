@@ -63,8 +63,9 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
 `remine_session` example. Every proof of work in them is real BLAKE2b:
 - `validation/share_headers.json`: each bitcoin header converted to v2 and re-mined to the target
   its share declares (the deliberately unmeetable `tight_target_header` is not mined).
-- `share_sync/*.json`: the first six shares of a real Shoal regtest run (single CPU miner on
-  xbt-lab, 2026-11-08), mined with regtest sharechain parameters; their tests run in regtest mode.
+- `share_sync/*.json`: the first six shares of a real Shoal regtest run (M2: three nodes and
+  three CPU miners on xbt-lab, 2026-11-08), mined with regtest sharechain parameters, including
+  the 12-share window and maturity 4; their tests run in regtest mode.
 - `validation/stratum/{a,b,with_version_rolling}/submit.json`: re-mined Sia-dialect submissions
   for each recorded session's job (template, coinbase halves and extranonce1 unchanged).
 - Notify tests assert the XBT dialect and read the coinbase halves from the tracked job.

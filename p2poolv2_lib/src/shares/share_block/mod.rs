@@ -676,9 +676,6 @@ mod tests {
     use crate::accounting::payout::payout_distribution::{
         append_proportional_distribution, include_address_and_cut,
     };
-    use crate::accounting::payout::sharechain_pplns::pplns_window::{
-        COINBASE_MATURITY, PPLNS_WINDOW_SHARES,
-    };
     use crate::shares::share_commitment::ShareCommitment;
     use crate::shares::transactions::coinbase::compute_witness_root;
     use crate::stratum::work::coinbase::{
@@ -949,22 +946,23 @@ mod tests {
 
         // Build PPLNS distribution matching the production PplnsWindow logic:
         // skip the shares below the block that are not yet mature for it, then
-        // pay the next PPLNS_WINDOW_SHARES shares, each weighted by its share
-        // chain difficulty (from header.bits). The fixture chain is shorter than
-        // COINBASE_MATURITY, so its shares are all always mature and every
-        // prior share is paid.
+        // pay the next window of shares, each weighted by its share chain
+        // difficulty (from header.bits). Shoal: the fixture is a regtest chain
+        // (window 12, maturity 4), so its later shares skip the newest ones.
         for (index, block) in blocks.iter().enumerate().skip(1) {
             let header = &block.header;
 
             // The block at fixture index `index` is at share chain height `index`.
+            // Shoal: regtest's window and maturity (xbt_params), the rules the chain was mined under.
+            let coinbase_maturity = crate::xbt_params::coinbase_maturity(network);
             let immature_share_count =
-                (COINBASE_MATURITY - 1).min(index.saturating_sub(COINBASE_MATURITY));
+                (coinbase_maturity - 1).min(index.saturating_sub(coinbase_maturity));
             let mut address_difficulty_map: HashMap<bitcoin::Address, u128> =
                 HashMap::with_capacity(4);
             for prior_index in (0..index)
                 .rev()
                 .skip(immature_share_count)
-                .take(PPLNS_WINDOW_SHARES)
+                .take(crate::xbt_params::pplns_window_shares(network))
             {
                 let prior_header = &blocks[prior_index].header;
                 let share_difficulty = prior_header.get_difficulty(network);
