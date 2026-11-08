@@ -58,6 +58,13 @@ upstream unchanged.
   (`REGTEST_MIN_WINDOW_BUFFER`), so the short window still pays for forks a few shares deep.
   Other networks keep upstream's 1% buffer.
 
+## Changes (milestone M4: latency and uncles)
+- On regtest, stratum difficulty is in units of 1/1024 of difficulty 1
+  (`xbt_params::stratum_difficulty_divisor`): `mining.set_difficulty` sends the fractional value
+  (difficulty 1 goes out as 0.0009765625) and the submit check scales the hash's difficulty to
+  match. CPU miners can then find 10 s shares. Every other network has a divisor of 1 and sends
+  upstream's integers unchanged.
+
 ## Test fixtures (XBT)
 Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's
 `remine_session` example. Every proof of work in them is real BLAKE2b:

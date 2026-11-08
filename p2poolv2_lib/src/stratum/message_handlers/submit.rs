@@ -305,11 +305,15 @@ pub(crate) fn build_full_block(
 
 /// Use bitcoin mainnet max attainable target to convert the hash into difficulty
 /// This global difficulty to used to track difficult adjustment by the pool, independent of the chain that is being mined.
+///
+/// Shoal: in pool units, i.e. scaled by `xbt_params::stratum_difficulty_divisor()` (1 except on
+/// regtest), matching what set_difficulty tells the miner.
 fn get_true_difficulty(hash: &bitcoin::BlockHash) -> u128 {
     let mut bytes = hash.to_byte_array();
     bytes.reverse();
     let diff = u128::from_str_radix(&hex::encode(&bytes[..16]), 16).unwrap();
-    (0xFFFF_u128 << (208 - 128)) / diff
+    let divisor = crate::xbt_params::stratum_difficulty_divisor() as u128;
+    ((0xFFFF_u128 << (208 - 128)) * divisor) / diff.max(1)
 }
 
 #[cfg(test)]

@@ -88,6 +88,20 @@ pub fn anchor_target(network: Network) -> CompactTarget {
     }
 }
 
+/// On regtest, stratum difficulty 1 means 1/1024 of a real difficulty-1 share, so CPU miners
+/// submit often enough for 10 s shares and uncles. The wire value is fractional (0.0009765625).
+pub const REGTEST_STRATUM_DIFFICULTY_DIVISOR: u64 = 1024;
+
+/// The divisor between pool-unit stratum difficulty and what the miner is told: 1 on every
+/// network but regtest.
+pub fn stratum_difficulty_divisor() -> u64 {
+    if is_regtest() && !cfg!(feature = "sim") {
+        REGTEST_STRATUM_DIFFICULTY_DIVISOR
+    } else {
+        1
+    }
+}
+
 /// PPLNS window on regtest, in shares: short, so a test run of a few dozen shares slides it.
 pub const REGTEST_PPLNS_WINDOW_SHARES: usize = 12;
 
@@ -131,6 +145,18 @@ mod tests {
         assert!(regtest_max > upstream);
         assert!(regtest_anchor > upstream && regtest_anchor < regtest_max);
         assert_eq!(anchor_target(Network::Testnet4).to_consensus(), 0x1b41_88f5);
+    }
+
+    #[test]
+    fn only_regtest_divides_stratum_difficulty() {
+        assert_eq!(stratum_difficulty_divisor(), 1);
+        assert!(set_network(Network::Regtest));
+        assert_eq!(stratum_difficulty_divisor(), REGTEST_STRATUM_DIFFICULTY_DIVISOR);
+        let message = crate::stratum::messages::SetDifficultyNotification::new(2048);
+        assert_eq!(
+            serde_json::to_string(&message).unwrap(),
+            r#"{"method":"mining.set_difficulty","params":[2.0]}"#
+        );
     }
 
     #[test]

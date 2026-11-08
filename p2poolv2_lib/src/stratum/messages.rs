@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (2026): set_difficulty sends regtest's fractional difficulty.
+// See SHOAL-CHANGES.md.
 
 /// Custom implementation of Stratum messages with JSON-RPC serialization
 use std::borrow::Cow;
@@ -181,7 +184,29 @@ pub struct Notify {
 pub struct SetDifficultyNotification<'a> {
     #[serde(borrow)]
     pub method: Cow<'a, str>,
+    /// Session difficulty in pool units. Shoal: on regtest the wire value is this divided by
+    /// `xbt_params::stratum_difficulty_divisor()`, so CPU miners can work below difficulty 1.
+    #[serde(serialize_with = "serialize_wire_difficulty")]
     pub params: Vec<u64>,
+}
+
+/// Shoal: write pool-unit difficulties as the miner sees them. With a divisor of 1 (every network
+/// but regtest) this is the integer upstream sends.
+fn serialize_wire_difficulty<S: serde::Serializer>(
+    params: &[u64],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+    let divisor = crate::xbt_params::stratum_difficulty_divisor();
+    let mut seq = serializer.serialize_seq(Some(params.len()))?;
+    for &difficulty in params {
+        if divisor == 1 {
+            seq.serialize_element(&difficulty)?;
+        } else {
+            seq.serialize_element(&(difficulty as f64 / divisor as f64))?;
+        }
+    }
+    seq.end()
 }
 
 /// NotifyParams represents the parameters for the mining.notify message
