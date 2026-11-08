@@ -71,6 +71,11 @@ upstream unchanged.
   the genesis (ASERT anchor) target, so a run with several CPU miners starts near 10 s shares
   instead of climbing from the single-miner default. Both ignored on every other network.
 
+## Attack test builds (milestone M5)
+- Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
+  parent block, for the regtest test that shows what the sharechain pays for work that can never
+  become a block. Refuses to run off regtest. Never enabled by default or in a release build.
+
 ## Test fixtures (XBT)
 Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's
 `remine_session` example. Every proof of work in them is real BLAKE2b:

@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (2026): optional dead-template attack for regtest tests
+// (feature `shoal-attack-dead-template`). See SHOAL-CHANGES.md.
 
 use crate::stratum::work::block_template::BlockTemplate;
 use crate::stratum::work::error::WorkError;
@@ -73,6 +76,11 @@ fn compute_merkle_branches(input_txids: Vec<sha256d::Hash>) -> Vec<sha256d::Hash
 /// Get a new blocktemplate from the bitcoind server
 /// Parse the received JSON into a BlockTemplate struct and return it.
 #[instrument(level = "debug", skip(bitcoind))]
+/// Shoal M5 attack test: the fabricated XBT parent every job of an attack build names.
+#[cfg(feature = "shoal-attack-dead-template")]
+const SHOAL_FABRICATED_PARENT: &str =
+    "5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead";
+
 async fn get_block_template(
     bitcoind: &BitcoindRpcClient,
     network: bitcoin::Network,
@@ -80,7 +88,17 @@ async fn get_block_template(
     match bitcoind.getblocktemplate(network).await {
         Ok(blocktemplate_json) => {
             match serde_json::from_str::<BlockTemplate>(blocktemplate_json.as_str()) {
+                #[cfg(not(feature = "shoal-attack-dead-template"))]
                 Ok(template) => Ok(template),
+                // Shoal M5 attack test: the job builds on an XBT block that does not exist.
+                #[cfg(feature = "shoal-attack-dead-template")]
+                Ok(mut template) => {
+                    if network != bitcoin::Network::Regtest {
+                        panic!("shoal-attack-dead-template is a regtest test build");
+                    }
+                    template.previousblockhash = SHOAL_FABRICATED_PARENT.to_string();
+                    Ok(template)
+                }
                 Err(e) => Err(Box::new(WorkError {
                     message: e.to_string(),
                 })),

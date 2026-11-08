@@ -21,6 +21,10 @@ test-utils = ["dep:rand", "dep:tempfile", "p2poolv2_config/test-utils"]
 # can be emitted without hashing. MUST NEVER be enabled in a release build.
 # See docs/simulation/load-test-plan.md.
 sim = ["dep:rand"]
+# Shoal attack test (M5): build every job on a fabricated XBT parent block, to show what the
+# sharechain pays for work that can never become a block. Regtest test builds only; MUST NEVER
+# be enabled in a release build.
+shoal-attack-dead-template = []
 
 [dependencies]
 # Optional test utilities dependencies
