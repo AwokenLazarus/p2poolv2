@@ -10,3 +10,4 @@ pub mod gbt;
 pub mod notify;
 pub mod prepared_notify;
 pub mod tracker;
+pub mod xbt;

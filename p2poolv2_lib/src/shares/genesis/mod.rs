@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 use std::error::Error;
 
@@ -57,6 +60,7 @@ const MAINNET_GENESIS_DATA: GenesisData = GenesisData {
 // 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206.
 // Used only as a fixed anchor for the share chain on regtest; it does
 // not need to match the connected bitcoind's current tip.
+// Shoal: an XBT v2 block; see test_regtest_genesis_block_hash.
 const REGTEST_GENESIS_DATA: GenesisData = GenesisData {
     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
     bitcoin_block: include_bytes!("regtest.dat"),
@@ -122,16 +126,20 @@ mod tests {
         assert!(block.check_merkle_root());
     }
 
+    /// Shoal: regtest anchors to a deterministic XBT v2 block (Bitcoin's regtest genesis
+    /// coinbase under a BLAKE2b-mined 164-byte header), made by Shoal's
+    /// `cargo run -p shoal-header --example regtest_genesis`.
     #[test]
     fn test_regtest_genesis_block_hash() {
         let genesis = genesis_data(bitcoin::Network::Regtest).unwrap();
-        let block = deserialize::<Block>(genesis.bitcoin_block).unwrap();
+        let block = deserialize::<shoal_header::XbtBlock>(genesis.bitcoin_block).unwrap();
 
         assert_eq!(
             block.block_hash(),
-            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
+            BlockHash::from_str("6b25bc7efc91c1eafd86d97618dd024a868849889b7bd9c1008d72f0510dc77c")
                 .unwrap()
         );
         assert!(block.check_merkle_root());
+        assert!(block.header.validate_pow(block.header.target()).is_ok());
     }
 }

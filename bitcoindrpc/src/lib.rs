@@ -224,13 +224,13 @@ impl BitcoindRpcClient {
             bitcoin::Network::Signet => {
                 vec![serde_json::json!({
                     "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                    "rules": ["segwit", "signet"],
+                    "rules": ["segwit", "signet", "blake2b"],
                 })]
             }
             _ => {
                 vec![serde_json::json!({
                     "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                    "rules": ["segwit"],
+                    "rules": ["segwit", "blake2b"],
                 })]
             }
         };
@@ -470,7 +470,7 @@ mod tests {
                 "method": "getblocktemplate",
                 "params": [{
                     "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                    "rules": ["segwit"],
+                    "rules": ["segwit", "blake2b"],
                 }],
                 "id": 0
             })))
@@ -520,7 +520,7 @@ mod tests {
                 "method": "getblocktemplate",
                 "params": [{
                     "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                    "rules": ["segwit", "signet"],
+                    "rules": ["segwit", "signet", "blake2b"],
                 }],
                 "id": 0
             })))
@@ -660,7 +660,7 @@ mod tests {
                     "method": "getblocktemplate",
                     "params": [{
                         "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                        "rules": ["segwit"],
+                        "rules": ["segwit", "blake2b"],
                     }],
                     "id": i
                 })))
@@ -685,7 +685,7 @@ mod tests {
                 "method": "getblocktemplate",
                 "params": [{
                     "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
-                    "rules": ["segwit"],
+                    "rules": ["segwit", "blake2b"],
                 }],
                 "id": 3
             })))

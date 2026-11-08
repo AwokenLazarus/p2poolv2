@@ -141,6 +141,8 @@ pub struct PreparedNotifyParams {
     /// Merkle branches for the template transactions (excluding coinbase).
     /// Passed through to JobDetails so validators can verify the bitcoin merkle root.
     merkle_branches: Vec<bitcoin::TxMerkleNode>,
+    /// Shoal: whether miners should drop older jobs (XBT notify is built per miner).
+    clean_jobs: bool,
 }
 
 impl PreparedNotifyParams {
@@ -406,6 +408,7 @@ impl PreparedNotifyParamsBuilder {
                 .into_iter()
                 .map(bitcoin::TxMerkleNode::from_raw_hash)
                 .collect(),
+            clean_jobs: self.clean_jobs,
         })
     }
 }
@@ -517,16 +520,14 @@ pub(crate) fn build_notify_from_prepared(
     let job_id = tracker_handle.get_next_job_id();
     let job_id_hex = format!("{job_id:016x}");
 
-    // Clone the JSON template and overwrite the fixed-size placeholders.
-    let mut notify_json = prepared.json_template.clone();
-    notify_json.replace_range(
-        prepared.job_id_offset..prepared.job_id_offset + 16,
-        &job_id_hex,
-    );
-    notify_json.replace_range(
-        prepared.coinbase2_offset..prepared.coinbase2_offset + prepared.coinbase2_placeholder_len,
-        &coinbase2,
-    );
+    // Shoal: XBT miners get a Sia-profile job. The extranonce lives in the header, so the
+    // coinbase (with a zero extranonce) and its merkle root are fixed for this job, and the
+    // notify carries h2 in place of coinbase1/coinbase2/branches.
+    let coinbase = super::xbt::zero_extranonce_coinbase(&prepared.coinbase1, &coinbase2)?;
+    let job_header =
+        super::xbt::job_header(&prepared.template, &coinbase, &prepared.merkle_branches)?;
+    let notify_json =
+        shoal_stratum::notify_message(&job_id_hex, &job_header, prepared.clean_jobs).to_string();
 
     // Insert job into tracker
     tracker_handle.insert_job(

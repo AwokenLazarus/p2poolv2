@@ -7,12 +7,10 @@
 
 use crate::stratum::error::Error;
 use crate::stratum::messages::SimpleRequest;
-use crate::stratum::work::gbt::compute_merkle_root_from_branches;
 use crate::stratum::work::tracker::JobDetails;
 use shoal_header::XbtHeader as Header;
 use bitcoin::consensus::Decodable;
 use hex::FromHex;
-use std::str::FromStr;
 use tracing::{debug, info};
 
 /// Share validation result
@@ -45,6 +43,8 @@ pub fn build_coinbase_from_components(
 
 /// Applies version mask received with submission, if the version_bits is compatible with version_mask from session
 /// If params don't include version_bits, it returns the original header version
+// Shoal: unused on XBT (Sia-profile miners do no version rolling); kept for upstream parity.
+#[allow(dead_code)]
 fn apply_version_mask(
     header_version: i32,
     version_mask: i32,
@@ -88,41 +88,41 @@ pub fn validate_bitcoin_difficulty(
         .ok_or_else(|| Error::InvalidParams("Missing enonce2".into()))?
         .as_str();
 
-    // build coinbase from submission
-    let coinbase =
-        build_coinbase_from_components(&job.coinbase1, enonce1_hex, enonce2, &job.coinbase2)
-            .map_err(|_| Error::InvalidParams("Failed to build coinbase transaction".into()))?;
+    // Shoal: on XBT the extranonce is in the header, so the coinbase is built with a zero
+    // extranonce, exactly as the job's notify was.
+    let _ = enonce2;
+    let coinbase = build_coinbase_from_components(
+        &job.coinbase1,
+        "00000000",
+        "0000000000000000",
+        &job.coinbase2,
+    )
+    .map_err(|_| Error::InvalidParams("Failed to build coinbase transaction".into()))?;
 
     debug!("Coinbase transaction: {:?}", coinbase);
 
-    // Compute merkle root by walking the pre-computed branches along with the coinbase txid.
-    let merkle_root =
-        compute_merkle_root_from_branches(coinbase.compute_txid(), &job.template_merkle_branches);
-
-    let ntime_str = submission.params[3]
-        .as_ref()
-        .ok_or_else(|| Error::InvalidParams("Missing ntime".into()))?;
-    let n_time =
-        u32::from_str_radix(ntime_str, 16).map_err(|_| Error::InvalidParams("Bad nTime".into()))?;
-
-    let version = apply_version_mask(job.blocktemplate.version, version_mask, &submission.params)?;
-
-    // build the block header from the block template and submission
-    let header = Header {
-        version: bitcoin::block::Version::from_consensus(version),
-        prev_blockhash: bitcoin::BlockHash::from_str(&job.blocktemplate.previousblockhash).unwrap(),
-        merkle_root,
-        time: n_time,
-        bits: compact_target,
-        nonce: u32::from_str_radix(
-            submission.params[4]
-                .as_ref()
-                .ok_or_else(|| Error::InvalidParams("Missing nonce".into()))?,
-            16,
-        )
-        .map_err(|_| Error::InvalidParams("Bad nonce".into()))?,
-        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
-    };
+    // Shoal: rebuild the XBT header the miner hashed: the job header (merkle root over the
+    // zero-extranonce coinbase) plus this session's extranonce1 and the submitted
+    // extranonce2, nonces and rolled ntime. Sia-profile miners do no version rolling, so the
+    // version mask is not applied.
+    let _ = version_mask;
+    let job_header = crate::stratum::work::xbt::job_header(
+        &job.blocktemplate,
+        &coinbase,
+        &job.template_merkle_branches,
+    )
+    .map_err(|error| Error::InvalidParams(error.message))?;
+    let enonce1: [u8; shoal_stratum::EXTRANONCE1_SIZE] = Vec::from_hex(enonce1_hex)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| Error::InvalidParams("Bad enonce1".into()))?;
+    let sia_submission = shoal_stratum::Submission::parse(
+        submission.params[2].as_deref(),
+        submission.params[3].as_deref(),
+        submission.params[4].as_deref(),
+    )
+    .map_err(|error| Error::InvalidParams(error.to_string()))?;
+    let header: Header = shoal_stratum::apply_submission(&job_header, &enonce1, &sia_submission);
 
     let meets_bitcoin_difficulty = match header.validate_pow(target) {
         Ok(_) => {
