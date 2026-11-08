@@ -73,14 +73,14 @@ fn compute_merkle_branches(input_txids: Vec<sha256d::Hash>) -> Vec<sha256d::Hash
     merkle_branches
 }
 
-/// Get a new blocktemplate from the bitcoind server
-/// Parse the received JSON into a BlockTemplate struct and return it.
-#[instrument(level = "debug", skip(bitcoind))]
 /// Shoal M5 attack test: the fabricated XBT parent every job of an attack build names.
 #[cfg(feature = "shoal-attack-dead-template")]
 const SHOAL_FABRICATED_PARENT: &str =
     "5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead5ead";
 
+/// Get a new blocktemplate from the bitcoind server
+/// Parse the received JSON into a BlockTemplate struct and return it.
+#[instrument(level = "debug", skip(bitcoind))]
 async fn get_block_template(
     bitcoind: &BitcoindRpcClient,
     network: bitcoin::Network,
