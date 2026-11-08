@@ -64,6 +64,10 @@ upstream unchanged.
   (difficulty 1 goes out as 0.0009765625) and the submit check scales the hash's difficulty to
   match. CPU miners can then find 10 s shares. Every other network has a divisor of 1 and sends
   upstream's integers unchanged.
+- A regtest node can take its genesis share's timestamp from `SHOAL_REGTEST_GENESIS_TIME`
+  (`xbt_params::init_regtest_genesis_time_from_env`, read once at start). The genesis time is
+  the ASERT anchor, and the fixed regtest genesis is months old, which pins the share target at
+  its easiest. Test runs set it to their start time. Ignored on every other network.
 
 ## Test fixtures (XBT)
 Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's

@@ -88,6 +88,49 @@ pub fn anchor_target(network: Network) -> CompactTarget {
     }
 }
 
+/// Environment variable that sets the regtest genesis share's timestamp (Unix seconds).
+///
+/// The genesis time is the ASERT anchor time. A fixed regtest genesis from months ago makes ASERT
+/// see the chain as far behind schedule and pins the share target at its easiest, so a test run
+/// sets this to its start time. All nodes of one regtest sharechain must use the same value: it
+/// changes the genesis hash, and nodes on different genesis shares do not peer.
+pub const REGTEST_GENESIS_TIME_ENV: &str = "SHOAL_REGTEST_GENESIS_TIME";
+
+#[cfg(not(test))]
+static REGTEST_GENESIS_TIME: OnceLock<u32> = OnceLock::new();
+
+/// On a regtest node, read [`REGTEST_GENESIS_TIME_ENV`] once (call after [`set_network`]).
+/// Returns the override in force, if any. Ignored on every other network.
+pub fn init_regtest_genesis_time_from_env() -> Result<Option<u32>, String> {
+    if !is_regtest() {
+        return Ok(None);
+    }
+    let Ok(value) = std::env::var(REGTEST_GENESIS_TIME_ENV) else {
+        return Ok(regtest_genesis_time());
+    };
+    let time: u32 = value
+        .trim()
+        .parse()
+        .map_err(|e| format!("{REGTEST_GENESIS_TIME_ENV}={value:?}: {e}"))?;
+    #[cfg(not(test))]
+    {
+        REGTEST_GENESIS_TIME.get_or_init(|| time);
+    }
+    let _ = time;
+    Ok(regtest_genesis_time())
+}
+
+/// The regtest genesis time override, if set (never under `cfg(test)`).
+pub fn regtest_genesis_time() -> Option<u32> {
+    #[cfg(not(test))]
+    {
+        if is_regtest() {
+            return REGTEST_GENESIS_TIME.get().copied();
+        }
+    }
+    None
+}
+
 /// On regtest, stratum difficulty 1 means 1/1024 of a real difficulty-1 share, so CPU miners
 /// submit often enough for 10 s shares and uncles. The wire value is fractional (0.0009765625).
 pub const REGTEST_STRATUM_DIFFICULTY_DIVISOR: u64 = 1024;

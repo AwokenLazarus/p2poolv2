@@ -124,7 +124,8 @@ pub fn genesis_timestamp(genesis_data: &GenesisData) -> u32 {
     }
     #[cfg(not(feature = "sim"))]
     {
-        genesis_data.timestamp
+        // Shoal: a regtest run may set its own genesis (ASERT anchor) time.
+        crate::xbt_params::regtest_genesis_time().unwrap_or(genesis_data.timestamp)
     }
 }
 
