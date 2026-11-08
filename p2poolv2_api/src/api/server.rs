@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 use crate::api::endpoints;
 use crate::api::error::ApiError;
@@ -473,7 +476,6 @@ mod tests {
     }
 
     use base64::Engine;
-    use bitcoin::blockdata::constants::genesis_block;
     use bitcoin::{Amount, Network, TxOut};
     use p2poolv2_lib::accounting::stats::metrics;
     use p2poolv2_lib::monitoring_events::create_monitoring_event_channel;
@@ -577,7 +579,8 @@ mod tests {
             .prev_share_blockhash(genesis.block_hash().to_string())
             .nonce(0xe9695792)
             .build();
-        share.header.bitcoin_header = genesis_block(Network::Regtest).header;
+        // Shoal: an XBT v2 header (Bitcoin's regtest genesis header is v1).
+        share.header.bitcoin_header = p2poolv2_lib::shoal_header::XbtHeader::regtest_test_header();
         state
             .chain_store_handle
             .add_share_block_and_organise_header(share.clone())

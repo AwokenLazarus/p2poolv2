@@ -43,8 +43,8 @@ serde_json = { workspace = true }
 zmq = { workspace = true }
 bitcoin = { workspace = true }
 # Shoal (2026): XBT header v2 and BLAKE2b PoW. See SHOAL-CHANGES.md.
-shoal-header = { git = "https://github.com/AwokenLazarus/Shoal.git", rev = "579951814f7dce49f000aacdf3e1441e314b256e" }
-shoal-stratum = { git = "https://github.com/AwokenLazarus/Shoal.git", rev = "579951814f7dce49f000aacdf3e1441e314b256e" }
+shoal-header = { git = "https://github.com/AwokenLazarus/Shoal.git", rev = "0a14343888355c43ab5f7fcffb1f3d6886c0c261" }
+shoal-stratum = { git = "https://github.com/AwokenLazarus/Shoal.git", rev = "0a14343888355c43ab5f7fcffb1f3d6886c0c261" }
 p2poolv2_wallet = { workspace = true }
 bitcoinconsensus = { workspace = true }
 base64 = { workspace = true }

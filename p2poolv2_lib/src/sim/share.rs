@@ -20,12 +20,10 @@ use crate::address::Address as P2PoolAddress;
 use crate::shares::coinbase_proof::CoinbaseProof;
 use crate::stratum::emission::Emission;
 use crate::stratum::work::difficulty::validate::build_coinbase_from_components;
-use crate::stratum::work::gbt::compute_merkle_root_from_branches;
 use crate::stratum::work::prepared_notify::{PreparedNotifyParams, build_notify_from_prepared};
 use crate::stratum::work::tracker::JobTracker;
+use bitcoin::Address;
 use shoal_header::XbtHeader as Header;
-use bitcoin::{Address, BlockHash, CompactTarget};
-use std::str::FromStr;
 
 /// A synthetic share ready to emit, plus the bitcoin coinbase it was built
 /// with (reused on a block-find to assemble the real regtest block, since the
@@ -89,34 +87,43 @@ pub fn build_sim_emission(params: SimShareParams<'_>) -> Result<BuiltShare, SimS
         .get_job(job_id)
         .ok_or_else(|| SimShareError("job missing from tracker after insert".into()))?;
 
-    // Assemble the bitcoin coinbase + merkle root exactly as
-    // validate_bitcoin_difficulty does, so the receive-side merkle check passes.
+    // Shoal: assemble the coinbase and XBT header exactly as validate_bitcoin_difficulty does:
+    // the coinbase with a zero extranonce, the job header, then this share's extranonce and
+    // nonce in the header. `ntime` is unused: the XBT job keeps the template's curtime.
     let coinbase = build_coinbase_from_components(
         &job.coinbase1,
-        params.enonce1_hex,
-        params.enonce2_hex,
+        "00000000",
+        "0000000000000000",
         &job.coinbase2,
     )
     .map_err(|e| SimShareError(format!("build coinbase: {e}")))?;
-    let merkle_root =
-        compute_merkle_root_from_branches(coinbase.compute_txid(), &job.template_merkle_branches);
-
-    let template = &job.blocktemplate;
-    let prev_blockhash = BlockHash::from_str(&template.previousblockhash)
-        .map_err(|e| SimShareError(format!("bad previousblockhash: {e}")))?;
-    let bits = CompactTarget::from_unprefixed_hex(&template.bits)
-        .map_err(|e| SimShareError(format!("bad bits: {e}")))?;
-
-    // No version rolling in the sim: use the template version verbatim.
-    let header = Header {
-        version: bitcoin::block::Version::from_consensus(template.version),
-        prev_blockhash,
-        merkle_root,
-        time: params.ntime,
-        bits,
-        nonce: params.nonce,
-        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
-    };
+    let job_header = crate::stratum::work::xbt::job_header(
+        &job.blocktemplate,
+        &coinbase,
+        &job.template_merkle_branches,
+    )
+    .map_err(|e| SimShareError(format!("job header: {}", e.message)))?;
+    let enonce1: [u8; 4] = hex::decode(params.enonce1_hex)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| SimShareError("bad enonce1".into()))?;
+    let mut extranonce2 = [0u8; 8];
+    let enonce2 =
+        hex::decode(params.enonce2_hex).map_err(|e| SimShareError(format!("bad enonce2: {e}")))?;
+    let n = enonce2.len().min(8);
+    extranonce2[..n].copy_from_slice(&enonce2[..n]);
+    let mut nonce = [0u8; 8];
+    nonce[..4].copy_from_slice(&params.nonce.to_le_bytes());
+    let _ = params.ntime;
+    let header: Header = shoal_stratum::apply_submission(
+        &job_header,
+        &enonce1,
+        &shoal_stratum::Submission {
+            extranonce2,
+            ntime: [0u8; 8],
+            nonce,
+        },
+    );
 
     let share_commitment = job
         .share_commitment
@@ -148,6 +155,7 @@ mod tests {
     use crate::stratum::work::coinbase::{
         build_bitcoin_coinbase_transaction, parse_bitcoin_coinbase_fields,
     };
+    use crate::stratum::work::gbt::compute_merkle_root_from_branches;
     use crate::stratum::work::prepared_notify::PreparedNotifyParamsBuilder;
     use crate::stratum::work::tracker::start_tracker_actor;
     use crate::test_utils::make_test_share_address;
@@ -276,13 +284,16 @@ mod tests {
         assert_eq!(commitment.miner_bitcoin_address, address);
         let fields =
             parse_bitcoin_coinbase_fields(&emission.bitcoin_coinbase).expect("parse coinbase");
+        // Shoal: on XBT the coinbase extranonce is zero and the extranonce lives in the
+        // header (4 zero bytes, then extranonce1 and extranonce2); the time is the template's.
+        assert_eq!(fields.extranonce, [0u8; 12]);
         assert_eq!(
-            fields.extranonce,
+            emission.header.v2.extranonce,
             [
-                0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
+                0, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
             ]
         );
         assert_eq!(emission.header.nonce, 42);
-        assert_eq!(emission.header.time, 1_700_000_600);
+        assert_eq!(emission.header.time, template.curtime);
     }
 }

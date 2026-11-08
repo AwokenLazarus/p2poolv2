@@ -284,10 +284,16 @@ mod tests {
         // Shoal: XBT notify (Sia-profile dialect). The template's fields now live in the job the
         // tracker holds; the notify commits to them through h2.
         assert!(!notify.params.clean_jobs);
-        assert_eq!(notify.params.nbits, "ffff7f20", "bits 0x207fffff in header byte order");
+        assert_eq!(
+            notify.params.nbits, "ffff7f20",
+            "bits 0x207fffff in header byte order"
+        );
         let job_id = JobId(u64::from_str_radix(&notify.params.job_id, 16).unwrap());
         let job = tracker_handle.get_job(job_id).expect("job tracked");
-        assert_eq!(job.blocktemplate.curtime, 0x68300262, "the job keeps GBT's curtime");
+        assert_eq!(
+            job.blocktemplate.curtime, 0x68300262,
+            "the job keeps GBT's curtime"
+        );
         assert_eq!(
             job.template_merkle_branches
                 .iter()

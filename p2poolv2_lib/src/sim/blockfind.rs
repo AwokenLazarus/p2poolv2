@@ -21,8 +21,8 @@
 use crate::stratum::message_handlers::submit::{build_full_block, submit_block};
 use crate::stratum::work::block_template::BlockTemplate;
 use bitcoin::BlockHash;
-use shoal_header::XbtHeader as Header;
 use bitcoindrpc::BitcoindRpcClient;
+use shoal_header::XbtHeader as Header;
 use tracing::{info, warn};
 
 /// Upper bound on grind iterations. Regtest meets target ~50% per nonce, so

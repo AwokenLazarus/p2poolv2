@@ -102,7 +102,79 @@ mod tests {
             blocks.push(block);
         }
         let headers: Vec<ShareHeader> = blocks.iter().map(|b| b.header.clone()).collect();
-        std::fs::write(SYNC_BLOCKS, serde_json::to_string_pretty(&blocks).unwrap() + "\n").unwrap();
-        std::fs::write(SYNC_HEADERS, serde_json::to_string_pretty(&headers).unwrap() + "\n").unwrap();
+        std::fs::write(
+            SYNC_BLOCKS,
+            serde_json::to_string_pretty(&blocks).unwrap() + "\n",
+        )
+        .unwrap();
+        std::fs::write(
+            SYNC_HEADERS,
+            serde_json::to_string_pretty(&headers).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+
+    /// Re-mine the recorded stratum sessions' `submit.json` for XBT. Each session's template,
+    /// job coinbase halves (in `notify.json`) and extranonce1 (in `authorize_response.json`) are
+    /// kept; the submission becomes a Sia-dialect one (8-byte extranonce2, ntime and nonce)
+    /// whose BLAKE2b PoW meets the template's own target, so it is a real XBT block for that job.
+    /// A sixth param (version bits) is kept as recorded: XBT miners do not roll versions, but
+    /// the test still exercises the six-param path.
+    ///
+    /// `cargo test -p p2poolv2_lib xbt_fixtures::tests::remine_stratum_sessions -- --ignored --nocapture`
+    #[test]
+    #[ignore = "rewrites fixtures; run by hand"]
+    fn remine_stratum_sessions() {
+        use crate::stratum::work::xbt::{job_header, zero_extranonce_coinbase};
+        for dir in ["a", "b", "with_version_rolling"] {
+            let path = format!("../p2poolv2_tests/test_data/validation/stratum/{dir}");
+            let (template, notify, _submit, authorize) =
+                crate::test_utils::load_valid_stratum_work_components(&path);
+            let coinbase =
+                zero_extranonce_coinbase(&notify.params.coinbase1, &notify.params.coinbase2)
+                    .unwrap();
+            let job = job_header(&template, &coinbase, &[]).unwrap();
+            let target = Target::from_compact(job.bits);
+            let en1_hex = authorize.result.unwrap()[1].as_str().unwrap().to_string();
+            let en1: [u8; 4] = hex::decode(&en1_hex).unwrap().try_into().unwrap();
+            let mut found = None;
+            'search: for en2 in 0u64.. {
+                for nonce in 0u32..(1 << 20) {
+                    let sub = shoal_stratum::Submission {
+                        extranonce2: en2.to_le_bytes(),
+                        ntime: [0u8; 8],
+                        nonce: {
+                            let mut n = [0u8; 8];
+                            n[..4].copy_from_slice(&nonce.to_le_bytes());
+                            n
+                        },
+                    };
+                    let header = shoal_stratum::apply_submission(&job, &en1, &sub);
+                    if header.meets(target) {
+                        found = Some((sub, header));
+                        break 'search;
+                    }
+                }
+            }
+            let (sub, header) = found.unwrap();
+            let submit_path = format!("{path}/submit.json");
+            let mut submit: Value =
+                serde_json::from_str(&std::fs::read_to_string(&submit_path).unwrap()).unwrap();
+            let params = submit["params"].as_array_mut().unwrap();
+            params[2] = Value::String(hex::encode(sub.extranonce2));
+            params[3] = Value::String(hex::encode(sub.ntime));
+            params[4] = Value::String(hex::encode(sub.nonce));
+            println!(
+                "{dir}: job {} bits {:#x} -> block {}",
+                notify.params.job_id,
+                job.bits.to_consensus(),
+                header.block_hash()
+            );
+            std::fs::write(
+                &submit_path,
+                serde_json::to_string_pretty(&submit).unwrap() + "\n",
+            )
+            .unwrap();
+        }
     }
 }

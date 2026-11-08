@@ -21,9 +21,9 @@ use crate::stratum::{
     },
 };
 use bitcoin::hashes::Hash;
-use shoal_header::{XbtBlock as Block, XbtHeader as Header};
 use bitcoindrpc::BitcoindRpcClient;
 use serde_json::json;
+use shoal_header::{XbtBlock as Block, XbtHeader as Header};
 use std::time::SystemTime;
 use tracing::{debug, error, info};
 
@@ -1329,93 +1329,10 @@ mod handle_submit_tests {
             "worker".to_string(),
             notify.params.job_id.clone(),
             "0000000000000000".to_string(),
-            "504e86ed".to_string(),
-            "ZZZZZZZZ".to_string(),
+            // Shoal: XBT fields are 8 bytes (16 hex); only the nonce is malformed.
+            "0000000000000000".to_string(),
+            "ZZZZZZZZZZZZZZZZ".to_string(),
         );
-
-        let (_mock_server, bitcoinrpc_config) = setup_mock_bitcoin_rpc().await;
-        let (emissions_tx, _) = mpsc::channel(10);
-        let (pplns_shares_tx, _pplns_shares_rx) = mpsc::channel(10);
-        let (chain_store_handle, _temp_dir) = setup_test_chain_store_handle(true).await;
-        let stats_dir = tempfile::tempdir().unwrap();
-        let metrics_handle = metrics::start_metrics(stats_dir.path().to_str().unwrap().to_string())
-            .await
-            .unwrap();
-
-        let ctx = StratumContext {
-            tracker_handle: tracker_handle.clone(),
-            bitcoindrpc_client: BitcoindRpcClient::new(
-                &bitcoinrpc_config.url,
-                &bitcoinrpc_config.username,
-                &bitcoinrpc_config.password,
-            )
-            .unwrap(),
-            start_difficulty: 1,
-            minimum_difficulty: 1,
-            maximum_difficulty: None,
-            ignore_difficulty: false,
-            validate_addresses: true,
-            emissions_tx,
-            pplns_shares_tx,
-            network: bitcoin::network::Network::Regtest,
-            metrics: metrics_handle,
-            chain_store_handle,
-            mode: PoolMode::P2poolv2,
-            miner_address: None,
-        };
-
-        let messages = handle_submit(submit, &mut session, ctx).await.unwrap();
-        let response = match &messages[..] {
-            [Message::Response(r)] => r,
-            _ => panic!("expected Response"),
-        };
-        assert_eq!(response.result, None);
-        let err = response.error.as_ref().unwrap();
-        assert_eq!(err.code, 20, "should be OtherUnknown (code 20)");
-        assert_eq!(err.message, "Invalid parameters provided: Bad nonce");
-    }
-
-    #[tokio::test]
-    async fn test_handle_submit_none_version_bits_returns_error_not_panic() {
-        let mut session = Session::<DifficultyAdjuster>::new(1, 1, None, DEFAULT_VERSION_MASK);
-        session.subscribed = true;
-        let tracker_handle = start_tracker_actor();
-
-        let (template, notify, _submit, authorize_response) =
-            load_valid_stratum_work_components("../p2poolv2_tests/test_data/validation/stratum/b/");
-
-        let enonce1 = authorize_response.result.unwrap()[1].clone();
-        let enonce1: &str = enonce1.as_str().unwrap();
-        session.enonce1 =
-            u32::from_le_bytes(hex::decode(enonce1).unwrap().as_slice().try_into().unwrap());
-        session.enonce1_hex = enonce1.to_string();
-        session.btcaddress = Some("tb1q3udk7r26qs32ltf9nmqrjaaa7tr55qmkk30q5d".to_string());
-        session.user_id = Some(1);
-
-        let job_id = JobId(u64::from_str_radix(&notify.params.job_id, 16).unwrap());
-        let _ = tracker_handle.insert_job(
-            Arc::new(template),
-            notify.params.coinbase1.to_string(),
-            notify.params.coinbase2.to_string(),
-            None,
-            TEST_COINBASE_NSECS,
-            vec![],
-            job_id,
-        );
-
-        // Build a submit with 6 params where the 6th (version bits) is None
-        let submit = SimpleRequest {
-            id: Some(Id::Number(4)),
-            method: std::borrow::Cow::Owned("mining.submit".to_string()),
-            params: std::borrow::Cow::Owned(vec![
-                Some("worker".to_string()),
-                Some(notify.params.job_id.clone()),
-                Some("0000000000000000".to_string()),
-                Some("504e86ed".to_string()),
-                Some("e9695791".to_string()),
-                None, // version bits is None
-            ]),
-        };
 
         let (_mock_server, bitcoinrpc_config) = setup_mock_bitcoin_rpc().await;
         let (emissions_tx, _) = mpsc::channel(10);
@@ -1458,8 +1375,93 @@ mod handle_submit_tests {
         assert_eq!(err.code, 20, "should be OtherUnknown (code 20)");
         assert_eq!(
             err.message,
-            "Invalid parameters provided: Missing version bits"
+            "Invalid parameters provided: bad nonce: expected 16 hex characters"
         );
+    }
+
+    #[tokio::test]
+    async fn test_handle_submit_none_version_bits_returns_error_not_panic() {
+        let mut session = Session::<DifficultyAdjuster>::new(1, 1, None, DEFAULT_VERSION_MASK);
+        session.subscribed = true;
+        let tracker_handle = start_tracker_actor();
+
+        let (template, notify, _submit, authorize_response) =
+            load_valid_stratum_work_components("../p2poolv2_tests/test_data/validation/stratum/b/");
+
+        let enonce1 = authorize_response.result.unwrap()[1].clone();
+        let enonce1: &str = enonce1.as_str().unwrap();
+        session.enonce1 =
+            u32::from_le_bytes(hex::decode(enonce1).unwrap().as_slice().try_into().unwrap());
+        session.enonce1_hex = enonce1.to_string();
+        session.btcaddress = Some("tb1q3udk7r26qs32ltf9nmqrjaaa7tr55qmkk30q5d".to_string());
+        session.user_id = Some(1);
+
+        let job_id = JobId(u64::from_str_radix(&notify.params.job_id, 16).unwrap());
+        let _ = tracker_handle.insert_job(
+            Arc::new(template),
+            notify.params.coinbase1.to_string(),
+            notify.params.coinbase2.to_string(),
+            None,
+            TEST_COINBASE_NSECS,
+            vec![],
+            job_id,
+        );
+
+        // Build a submit with 6 params where the 6th (version bits) is None
+        let submit = SimpleRequest {
+            id: Some(Id::Number(4)),
+            method: std::borrow::Cow::Owned("mining.submit".to_string()),
+            params: std::borrow::Cow::Owned(vec![
+                Some("worker".to_string()),
+                Some(notify.params.job_id.clone()),
+                Some("0000000000000000".to_string()),
+                // Shoal: XBT-format (16 hex) ntime and nonce.
+                Some("0000000000000000".to_string()),
+                Some("e969579100000000".to_string()),
+                None, // version bits is None
+            ]),
+        };
+
+        let (_mock_server, bitcoinrpc_config) = setup_mock_bitcoin_rpc().await;
+        let (emissions_tx, _) = mpsc::channel(10);
+        let (pplns_shares_tx, _pplns_shares_rx) = mpsc::channel(10);
+        let (chain_store_handle, _temp_dir) = setup_test_chain_store_handle(true).await;
+        let stats_dir = tempfile::tempdir().unwrap();
+        let metrics_handle = metrics::start_metrics(stats_dir.path().to_str().unwrap().to_string())
+            .await
+            .unwrap();
+
+        let ctx = StratumContext {
+            tracker_handle: tracker_handle.clone(),
+            bitcoindrpc_client: BitcoindRpcClient::new(
+                &bitcoinrpc_config.url,
+                &bitcoinrpc_config.username,
+                &bitcoinrpc_config.password,
+            )
+            .unwrap(),
+            start_difficulty: 1,
+            minimum_difficulty: 1,
+            maximum_difficulty: None,
+            ignore_difficulty: false,
+            validate_addresses: true,
+            emissions_tx,
+            pplns_shares_tx,
+            network: bitcoin::network::Network::Regtest,
+            metrics: metrics_handle,
+            chain_store_handle,
+            mode: PoolMode::P2poolv2,
+            miner_address: None,
+        };
+
+        let messages = handle_submit(submit, &mut session, ctx).await.unwrap();
+        let response = match &messages[..] {
+            [Message::Response(r)] => r,
+            _ => panic!("expected Response"),
+        };
+        // Shoal: XBT miners do no version rolling, so a missing (None) sixth param is ignored
+        // rather than an error. The point of the test stands: no panic, and this random nonce
+        // is not accepted as a valid share.
+        assert_ne!(response.result, Some(serde_json::json!(true)));
     }
 
     #[tokio::test]

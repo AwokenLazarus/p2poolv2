@@ -881,7 +881,11 @@ mod tests {
         // Shoal: on XBT coinbase2 is in the tracked job; the notify carries h2 instead.
         let job_id = JobId(u64::from_str_radix(job_id_str, 16).unwrap());
         let job = tracker_handle.get_job(job_id).expect("job tracked");
-        assert_eq!(params[3].as_str().unwrap(), "", "XBT notify has no coinbase2");
+        assert_eq!(
+            params[3].as_str().unwrap(),
+            "",
+            "XBT notify has no coinbase2"
+        );
         let coinbase2 = job.coinbase2.as_str();
         assert!(
             coinbase2.starts_with("08"),

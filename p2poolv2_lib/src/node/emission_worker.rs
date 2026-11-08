@@ -85,9 +85,9 @@ mod tests {
     use crate::stratum::emission::Emission;
     use crate::stratum::work::block_template::BlockTemplate;
     use crate::test_utils::{create_test_commitment, test_coinbase_transaction};
-    use shoal_header::XbtHeader as Header;
     use bitcoin::hashes::Hash;
     use bitcoin::{BlockHash, CompactTarget};
+    use shoal_header::XbtHeader as Header;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;

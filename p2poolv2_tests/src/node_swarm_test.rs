@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 use p2poolv2_lib::accounting::payout::sharechain_pplns::PplnsWindow;
 use p2poolv2_lib::accounting::stats::metrics;
@@ -205,6 +208,9 @@ fn load_share_sync_blocks() -> Vec<ShareBlock> {
 #[cfg(not(feature = "sim"))]
 #[test_log::test(tokio::test)]
 async fn test_three_nodes_share_sync() {
+    // Shoal: the share_sync fixture is a real XBT regtest chain, mined with regtest sharechain
+    // parameters, so these nodes run regtest parameters (process-wide in this test binary).
+    p2poolv2_lib::xbt_params::set_network(bitcoin::Network::Regtest);
     let fixture_blocks = load_share_sync_blocks();
     let share_count = (fixture_blocks.len() - 1) as u32;
     // Configure three nodes on unique ports with higher rate limit for fast sync.
@@ -334,7 +340,7 @@ async fn test_three_nodes_share_sync() {
         metrics1,
         monitoring_tx1,
         notify_tx1,
-        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Signet))),
+        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Regtest))),
     )
     .await
     .expect("Failed to create node 1");
@@ -350,7 +356,7 @@ async fn test_three_nodes_share_sync() {
         metrics2,
         monitoring_tx2,
         notify_tx2,
-        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Signet))),
+        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Regtest))),
     )
     .await
     .expect("Failed to create node 2");
@@ -363,7 +369,7 @@ async fn test_three_nodes_share_sync() {
         metrics3,
         monitoring_tx3,
         notify_tx3,
-        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Signet))),
+        Arc::new(RwLock::new(PplnsWindow::new(bitcoin::Network::Regtest))),
     )
     .await
     .expect("Failed to create node 3");

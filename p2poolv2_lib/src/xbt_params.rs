@@ -108,11 +108,17 @@ mod tests {
     #[test]
     fn network_setting_is_per_test_thread_and_first_call_wins() {
         assert!(!is_regtest());
-        assert_eq!(max_pool_target(), crate::shares::share_block::MAX_POOL_TARGET);
+        assert_eq!(
+            max_pool_target(),
+            crate::shares::share_block::MAX_POOL_TARGET
+        );
         assert!(set_network(Network::Regtest));
         assert!(is_regtest());
         assert_eq!(max_pool_target(), REGTEST_MAX_POOL_TARGET);
-        assert!(!set_network(Network::Testnet4), "a second network is refused");
+        assert!(
+            !set_network(Network::Testnet4),
+            "a second network is refused"
+        );
         assert!(is_regtest());
         let other_thread = std::thread::spawn(is_regtest).join().unwrap();
         assert!(!other_thread, "another test thread keeps upstream values");

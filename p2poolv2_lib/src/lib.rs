@@ -24,6 +24,8 @@ pub mod sim_overrides;
 pub mod store;
 pub mod stratum;
 pub mod utils;
+/// Shoal: the XBT header types, re-exported so dependent crates use the same version.
+pub use shoal_header;
 pub mod xbt_fixtures;
 pub mod xbt_params;
 

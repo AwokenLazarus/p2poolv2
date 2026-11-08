@@ -2129,8 +2129,7 @@ mod tests {
             .expect_get_candidate_blocks_needing_validation()
             .returning(|_, _| Ok(Vec::new()));
         let mut share = TestShareBlockBuilder::new().nonce(0xe9695791).build();
-        share.header.bitcoin_header =
-            shoal_header::XbtHeader::regtest_test_header();
+        share.header.bitcoin_header = shoal_header::XbtHeader::regtest_test_header();
 
         // This test is about the follow-up, so the newly confirmed block has
         // to be readable back.

@@ -23,12 +23,12 @@ use bitcoin::{
     hashes::Hash,
 };
 use core::mem;
-use shoal_header::XbtHeader as Header;
 use p2poolv2_wallet::witness_program_codec;
 use serde::{Deserialize, Serialize};
 pub use share_transaction::{
     DuplicatePrevoutError, ShareTransaction, SpendingPrevouts, extract_spending_prevouts,
 };
+use shoal_header::XbtHeader as Header;
 use std::error::Error;
 
 /// The maximum target a share needs to have to be a valid share.
@@ -703,8 +703,7 @@ mod tests {
         // The regtest genesis header meets its own (easy) target by
         // construction, so it reads as a found bitcoin block.
         let mut block_share = TestShareBlockBuilder::new().build();
-        block_share.header.bitcoin_header =
-            shoal_header::XbtHeader::regtest_test_header();
+        block_share.header.bitcoin_header = shoal_header::XbtHeader::regtest_test_header();
         assert!(block_share.is_bitcoin_block());
     }
 

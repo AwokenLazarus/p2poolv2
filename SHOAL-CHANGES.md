@@ -44,5 +44,30 @@ upstream unchanged.
   (`0x1e0fffff`), so CPU miners can produce shares on regtest. Every other network keeps
   upstream's `MAX_POOL_TARGET`, ASERT ceiling and anchor unchanged.
 
-Known open items (Shoal plan.md, M1): test fixtures regenerated as XBT shares, and the
-Bitcoin-format stratum and notify tests rewritten for the XBT dialect.
+- No built-in DNS seeds: upstream's `seed.testnet4.p2poolv2.org` is a Bitcoin P2Poolv2 host that
+  an XBT node must never query. Shoal seeds come with its first public testnet; until then peers
+  are configured with `dial_peers`.
+- Testnet4 and mainnet keep upstream's Bitcoin genesis anchors on purpose: an XBT node refuses
+  them (v1 header), so Shoal cannot run on those networks until XBT anchors are chosen.
+
+## Test fixtures (XBT)
+Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's
+`remine_session` example. Every proof of work in them is real BLAKE2b:
+- `validation/share_headers.json`: each bitcoin header converted to v2 and re-mined to the target
+  its share declares (the deliberately unmeetable `tight_target_header` is not mined).
+- `share_sync/*.json`: the first six shares of a real Shoal regtest run (single CPU miner on
+  xbt-lab, 2026-11-08), mined with regtest sharechain parameters; their tests run in regtest mode.
+- `validation/stratum/{a,b,with_version_rolling}/submit.json`: re-mined Sia-dialect submissions
+  for each recorded session's job (template, coinbase halves and extranonce1 unchanged).
+- Notify tests assert the XBT dialect and read the coinbase halves from the tracked job.
+- Two DNS-seed tests are ignored with a reason (no Shoal seeds yet).
+- Other test ports: stratum submit tests send XBT-format fields (bad-nonce and missing-version-bit
+  cases assert XBT behaviour); `build_pool_job_submit` and the session share builder in
+  `test_utils.rs`, and the `sim` share builder, assemble XBT headers; the three-node share-sync
+  integration test runs regtest parameters for its regtest fixture chain.
+- `p2poolv2_lib` re-exports `shoal_header`, so dependent crates use one version.
+
+Test status (2026-11-08, xbt-lab): `cargo test --workspace` 1,588 passed, 0 failed, 6 ignored
+(fixture tools and DNS-seed tests), with Shoal crates fetched from GitHub at the pinned rev.
+
+Known open items: XBT testnet4 anchor and Shoal DNS seeds (phase 3).

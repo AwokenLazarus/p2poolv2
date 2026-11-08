@@ -30,11 +30,9 @@ use crate::shares::share_block::{
 use crate::shares::transactions::coinbase::build_sharechain_coinbase_transaction;
 #[cfg(any(test, feature = "test-utils"))]
 use bitcoin::hashes::Hash;
+use bitcoin::{Address, BlockHash, CompactTarget, CompressedPublicKey, Transaction};
 #[cfg(any(test, feature = "test-utils"))]
 use shoal_header::{XbtBlock as Block, XbtHeader as Header};
-use bitcoin::{
-    Address, BlockHash, CompactTarget, CompressedPublicKey, Transaction,
-};
 #[cfg(any(test, feature = "test-utils"))]
 use std::str::FromStr;
 
@@ -499,16 +497,20 @@ pub fn build_pool_job_submit(tracker: &JobTracker, enonce1_hex: &str) -> SimpleR
     let job = tracker.get_job(job_id).unwrap();
     let job_id_hex = format!("{:016x}", job_id.0);
     let pool_target = Target::from_compact(pool_bits);
+    // Shoal: XBT (Sia-dialect) submit fields are 8 bytes each; the rolled ntime is zero.
+    let _ = ntime_hex;
 
     (0u32..)
         .map(|nonce| {
+            let mut nonce_field = [0u8; 8];
+            nonce_field[..4].copy_from_slice(&nonce.to_le_bytes());
             SimpleRequest::new_submit(
                 4,
                 "worker".to_string(),
                 job_id_hex.clone(),
                 "0000000000000001".to_string(),
-                ntime_hex.clone(),
-                format!("{nonce:08x}"),
+                "0000000000000000".to_string(),
+                hex::encode(nonce_field),
             )
         })
         .find(|submit| {
@@ -628,15 +630,25 @@ pub fn build_block_from_work_components(path: &str, nsecs: u64) -> ShareBlock {
     .unwrap()
     .into();
 
-    let bitcoin_header = Header {
-        version: bitcoin::block::Version::from_consensus(template.version),
+    // Shoal: the XBT header for this job and the session's Sia-dialect submission (the
+    // coinbase above carries a zero extranonce; the extranonce is in the header).
+    let job_header = shoal_stratum::job_header(&shoal_stratum::JobTemplate {
+        version: template.version,
         prev_blockhash: BlockHash::from_str(&template.previousblockhash).unwrap(),
         merkle_root,
-        time: u32::from_str_radix(submit.params[3].as_ref().unwrap(), 16).unwrap(),
+        curtime: template.curtime,
         bits: CompactTarget::from_unprefixed_hex(&template.bits).unwrap(),
-        nonce: u32::from_str_radix(submit.params[4].as_ref().unwrap(), 16).unwrap(),
-        v2: shoal_header::V2Fields::default(), // SHOAL(M1): real v2 fields from the job
-    };
+        height: template.height,
+        txcount: bitcoin_transactions.len() as u16,
+    });
+    let sia_submission = shoal_stratum::Submission::parse(
+        submit.params[2].as_deref(),
+        submit.params[3].as_deref(),
+        submit.params[4].as_deref(),
+    )
+    .unwrap();
+    let bitcoin_header: Header =
+        shoal_stratum::apply_submission(&job_header, &[0u8; EXTRANONCE1_SIZE], &sia_submission);
 
     let share_header = ShareHeader {
         prev_share_blockhash: BlockHash::all_zeros(),

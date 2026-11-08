@@ -8,9 +8,9 @@
 use crate::stratum::error::Error;
 use crate::stratum::messages::SimpleRequest;
 use crate::stratum::work::tracker::JobDetails;
-use shoal_header::XbtHeader as Header;
 use bitcoin::consensus::Decodable;
 use hex::FromHex;
+use shoal_header::XbtHeader as Header;
 use tracing::{debug, info};
 
 /// Share validation result
