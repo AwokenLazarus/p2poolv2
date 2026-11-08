@@ -32,8 +32,9 @@ thread_local! {
 /// The easiest share target on regtest: the same as Bitcoin/XBT regtest's block target.
 pub const REGTEST_MAX_POOL_TARGET: u32 = 0x207f_ffff;
 
-/// Genesis (ASERT anchor) target on regtest: about 1/16 of a difficulty-1 share, a few seconds
-/// for a CPU miner, so the ASERT loop starts near a 10 s share interval on test hardware.
+/// Default genesis (ASERT anchor) target on regtest: difficulty 1/4096 (4,096 times easier than
+/// a difficulty-1 share), so a single slow CPU miner still finds shares. A run with more hashrate
+/// sets its own with [`REGTEST_GENESIS_BITS_ENV`].
 pub const REGTEST_ANCHOR_TARGET: u32 = 0x1e0f_ffff;
 
 /// Record the node's network. The first call wins; later calls with another network are
@@ -83,7 +84,9 @@ pub fn max_pool_target() -> u32 {
 /// The genesis / ASERT anchor target for `network` when not overridden by the sim feature.
 pub fn anchor_target(network: Network) -> CompactTarget {
     match network {
-        Network::Regtest => CompactTarget::from_consensus(REGTEST_ANCHOR_TARGET),
+        Network::Regtest => CompactTarget::from_consensus(
+            regtest_genesis_bits().unwrap_or(REGTEST_ANCHOR_TARGET),
+        ),
         _ => CompactTarget::from_consensus(0x1b41_88f5),
     }
 }
@@ -96,28 +99,59 @@ pub fn anchor_target(network: Network) -> CompactTarget {
 /// changes the genesis hash, and nodes on different genesis shares do not peer.
 pub const REGTEST_GENESIS_TIME_ENV: &str = "SHOAL_REGTEST_GENESIS_TIME";
 
+/// Environment variable that sets the regtest genesis share's target (compact bits, hex, e.g.
+/// `1d07ffff`). It is the ASERT anchor target: a run sets it near the difficulty its miners find
+/// a share at every 10 s, so ASERT does not spend the run climbing from the default. Same rules
+/// as [`REGTEST_GENESIS_TIME_ENV`]: one value per sharechain, it changes the genesis hash.
+pub const REGTEST_GENESIS_BITS_ENV: &str = "SHOAL_REGTEST_GENESIS_BITS";
+
 #[cfg(not(test))]
 static REGTEST_GENESIS_TIME: OnceLock<u32> = OnceLock::new();
+#[cfg(not(test))]
+static REGTEST_GENESIS_BITS: OnceLock<u32> = OnceLock::new();
 
-/// On a regtest node, read [`REGTEST_GENESIS_TIME_ENV`] once (call after [`set_network`]).
-/// Returns the override in force, if any. Ignored on every other network.
-pub fn init_regtest_genesis_time_from_env() -> Result<Option<u32>, String> {
+/// On a regtest node, read [`REGTEST_GENESIS_TIME_ENV`] and [`REGTEST_GENESIS_BITS_ENV`] once
+/// (call after [`set_network`]). Returns the overrides in force. Ignored on other networks.
+/// Bits must be no easier than [`REGTEST_MAX_POOL_TARGET`].
+pub fn init_regtest_genesis_from_env() -> Result<(Option<u32>, Option<u32>), String> {
     if !is_regtest() {
-        return Ok(None);
+        return Ok((None, None));
     }
-    let Ok(value) = std::env::var(REGTEST_GENESIS_TIME_ENV) else {
-        return Ok(regtest_genesis_time());
-    };
-    let time: u32 = value
-        .trim()
-        .parse()
-        .map_err(|e| format!("{REGTEST_GENESIS_TIME_ENV}={value:?}: {e}"))?;
+    if let Ok(value) = std::env::var(REGTEST_GENESIS_TIME_ENV) {
+        let time: u32 = value
+            .trim()
+            .parse()
+            .map_err(|e| format!("{REGTEST_GENESIS_TIME_ENV}={value:?}: {e}"))?;
+        #[cfg(not(test))]
+        REGTEST_GENESIS_TIME.get_or_init(|| time);
+        let _ = time;
+    }
+    if let Ok(value) = std::env::var(REGTEST_GENESIS_BITS_ENV) {
+        let bits = u32::from_str_radix(value.trim().trim_start_matches("0x"), 16)
+            .map_err(|e| format!("{REGTEST_GENESIS_BITS_ENV}={value:?}: {e}"))?;
+        let target = bitcoin::Target::from_compact(CompactTarget::from_consensus(bits));
+        let easiest =
+            bitcoin::Target::from_compact(CompactTarget::from_consensus(REGTEST_MAX_POOL_TARGET));
+        if target > easiest || target == bitcoin::Target::ZERO {
+            return Err(format!(
+                "{REGTEST_GENESIS_BITS_ENV}={value:?}: must be a nonzero target no easier than {REGTEST_MAX_POOL_TARGET:#x}"
+            ));
+        }
+        #[cfg(not(test))]
+        REGTEST_GENESIS_BITS.get_or_init(|| bits);
+    }
+    Ok((regtest_genesis_time(), regtest_genesis_bits()))
+}
+
+/// The regtest genesis bits override, if set (never under `cfg(test)`).
+pub fn regtest_genesis_bits() -> Option<u32> {
     #[cfg(not(test))]
     {
-        REGTEST_GENESIS_TIME.get_or_init(|| time);
+        if is_regtest() {
+            return REGTEST_GENESIS_BITS.get().copied();
+        }
     }
-    let _ = time;
-    Ok(regtest_genesis_time())
+    None
 }
 
 /// The regtest genesis time override, if set (never under `cfg(test)`).

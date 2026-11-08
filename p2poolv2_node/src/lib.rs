@@ -160,11 +160,17 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
 
     // Shoal: per-network sharechain parameters must be fixed before genesis is built.
     p2poolv2_lib::xbt_params::set_network(config.stratum.network);
-    match p2poolv2_lib::xbt_params::init_regtest_genesis_time_from_env() {
-        Ok(Some(time)) => info!("Regtest genesis (ASERT anchor) time set to {time}"),
-        Ok(None) => {}
+    match p2poolv2_lib::xbt_params::init_regtest_genesis_from_env() {
+        Ok((time, bits)) => {
+            if let Some(time) = time {
+                info!("Regtest genesis (ASERT anchor) time set to {time}");
+            }
+            if let Some(bits) = bits {
+                info!("Regtest genesis (ASERT anchor) bits set to {bits:#010x}");
+            }
+        }
         Err(error) => {
-            error!("Invalid regtest genesis time: {error}");
+            error!("Invalid regtest genesis override: {error}");
             return Err(ExitCode::FAILURE);
         }
     }
