@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 //! Bitcoin blocks found by the pool, derived from the share chain.
 //!

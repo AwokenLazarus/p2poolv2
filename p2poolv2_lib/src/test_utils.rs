@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (AwokenLazarus and Shoal contributors), 2026:
+// adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 // Imports for setup_test_chain_store_handle (available with test-utils feature)
 #[cfg(any(test, feature = "test-utils"))]

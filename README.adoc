@@ -1,3 +1,7 @@
+NOTE: This is the Shoal project's fork of P2Poolv2, adapted for XBT (Bitcoin on BLAKE2b). It is not
+affiliated with or endorsed by the P2Poolv2 developers. See link:SHOAL-CHANGES.md[SHOAL-CHANGES.md].
+Upstream: https://github.com/p2poolv2/p2poolv2
+
 image:https://github.com/p2poolv2/p2poolv2/actions/workflows/rust.yml/badge.svg[Rust CI, link=https://github.com/p2poolv2/p2poolv2/actions/workflows/rust.yml]
 image:https://codecov.io/gh/p2poolv2/p2poolv2/graph/badge.svg?token=Xeu4GFdASS[Codecov, link=https://codecov.io/gh/p2poolv2/p2poolv2]
 image:https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg[License: MIT OR Apache-2.0, link=#license]

@@ -42,7 +42,8 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 zmq = { workspace = true }
 bitcoin = { workspace = true }
-shoal-header = { path = "../../shoal/crates/shoal-header" }
+# Shoal (2026): XBT header v2 and BLAKE2b PoW. See SHOAL-CHANGES.md.
+shoal-header = { git = "https://github.com/AwokenLazarus/Shoal.git", rev = "ca4800d5c9069996ea82798b1380f936d85010fd" }
 p2poolv2_wallet = { workspace = true }
 bitcoinconsensus = { workspace = true }
 base64 = { workspace = true }
