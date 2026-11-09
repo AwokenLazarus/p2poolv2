@@ -242,6 +242,15 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
         }
     }
 
+    // Shoal: load the local XBT chain into the header store before any peer share arrives, so
+    // the first carried headers have something to link to (`xbt_chain`).
+    if p2poolv2_lib::xbt_chain::is_active() {
+        if let Err(error) = seed_xbt_headers(&config.bitcoinrpc).await {
+            error!("Cannot load XBT headers from the local node: {error}");
+            return Err(ExitCode::FAILURE);
+        }
+    }
+
     background_tasks::start_background_tasks(
         config.stratum.mode,
         store.clone(),
@@ -458,4 +467,21 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
     };
 
     Ok((handles, runner))
+}
+
+/// Shoal: store the local XBT node's active chain in the header store (back to a stored header,
+/// or `seed_depth` blocks on a fresh store).
+async fn seed_xbt_headers(
+    bitcoinrpc: &bitcoindrpc::BitcoinRpcConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = bitcoindrpc::BitcoindRpcClient::new(
+        &bitcoinrpc.url,
+        &bitcoinrpc.username,
+        &bitcoinrpc.password,
+    )?;
+    let best: String = client.request("getbestblockhash", vec![]).await?;
+    let best = best.parse::<bitcoin::BlockHash>()?;
+    let stored = p2poolv2_lib::xbt_chain::sync_from_node(&client, &best).await?;
+    info!("XBT header store: {stored} headers loaded from the local node, tip {best}");
+    Ok(())
 }
