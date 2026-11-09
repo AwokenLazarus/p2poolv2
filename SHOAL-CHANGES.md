@@ -126,7 +126,7 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
   integration test runs regtest parameters for its regtest fixture chain.
 - `p2poolv2_lib` re-exports `shoal_header`, so dependent crates use one version.
 
-Test status (2026-11-08, xbt-lab): `cargo test --workspace` 1,588 passed, 0 failed, 6 ignored
+Test status (2026-11-09, xbt-lab): `cargo test --workspace` 1,613 passed, 0 failed, 6 ignored
 (fixture tools and DNS-seed tests), with Shoal crates fetched from GitHub at the pinned rev.
 
 Known open items: XBT testnet4 anchor and Shoal DNS seeds (phase 3).
