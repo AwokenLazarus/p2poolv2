@@ -100,6 +100,13 @@ Upstream's design `docs/architecture/mine-on-bitcoin-chain.md` (issue #652), imp
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
   parent block, for the regtest test that shows what the sharechain pays for work that can never
   become a block. Refuses to run off regtest. Never enabled by default or in a release build.
+- Cargo feature `shoal-attack` (lib and node), mode from `SHOAL_ATTACK` (`p2poolv2_lib/src/attack.rs`):
+  `withhold` (never submit blocks), `wrong-split` (coinbase pays all to `SHOAL_ATTACK_ADDRESS`, own
+  payout check skipped), `copy` (rebroadcast each share with a changed coinbase and under the
+  attacker's address) and `private-fork` (ignore peers and hold own shares back between
+  `SHOAL_ATTACK_PRIVATE_FROM` and `_UNTIL` seconds, then release). Regtest only; never default.
+- Sharechain reorg alarm (`store/organise/confirmed.rs`): a reorg replacing 6 or more confirmed
+  shares logs `SHARECHAIN REORG ALARM` at warn level. Active in every build.
 
 ## Test fixtures (XBT)
 Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand) and Shoal's
