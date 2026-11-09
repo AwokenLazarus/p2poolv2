@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024-2026 P2Poolv2 Developers (see AUTHORS)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Modified by the Shoal project (2026): mine on the current XBT chain (upstream #652 design)
+// and regtest attack test hooks. See SHOAL-CHANGES.md.
 
 use crate::node::messages::Message;
 use crate::node::request_response_handler::peer_block_knowledge::PeerBlockKnowledge;
