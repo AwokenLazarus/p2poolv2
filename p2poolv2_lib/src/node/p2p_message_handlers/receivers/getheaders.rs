@@ -34,13 +34,21 @@ pub async fn handle_getheaders<C: Send + Sync>(
         &stop_block_hash,
         MAX_HEADERS_IN_RESPONSE,
     )?;
+    // Shoal: carry the XBT headers a receiver needs to place the batch's XBT prevs.
+    let carried = crate::xbt_chain::carried_for_batch(
+        response_headers
+            .iter()
+            .map(|header| &header.bitcoin_header.prev_blockhash),
+    );
     let mut entries = Vec::with_capacity(response_headers.len());
     for header in response_headers {
         let branch = chain_store_handle.get_template_merkle_branches(&header.block_hash())?;
         entries.push((header, branch));
     }
     let headers_message =
-        Message::ShareHeaders(ShareHeaderBatch::from_headers_with_branches(entries));
+        Message::ShareHeaders(
+            ShareHeaderBatch::from_headers_with_branches(entries).with_carried_xbt_headers(carried),
+        );
     // Send response and handle errors by logging them before returning
     debug!("Sending Headers {headers_message:?}");
     if let Err(err) = swarm_tx

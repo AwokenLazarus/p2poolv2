@@ -71,6 +71,31 @@ upstream unchanged.
   the genesis (ASERT anchor) target, so a run with several CPU miners starts near 10 s shares
   instead of climbing from the single-miner default. Both ignored on every other network.
 
+## Changes (milestone M5: mine on the current XBT chain)
+Upstream's design `docs/architecture/mine-on-bitcoin-chain.md` (issue #652), implemented for XBT:
+- `p2poolv2_lib/src/xbt_chain.rs` (new): the XBT header store and the payout rule. The store is
+  fed by the GBT poller (each template's parent, walked back to a stored header; a fresh store
+  loads `seed_depth` headers) and by headers carried with shares, and is kept in
+  `<store path>.xbt-headers`. A carried header must link to a stored one, meet its PoW, have
+  exactly the `bits` XBT's difficulty rule gives (Knots-BLAKE2b `GetNextWorkRequired`: Bitcoin's
+  2,016-block retarget clamped at 4x, min-difficulty blocks on test networks, BIP94 on testnet4,
+  and the one-off `Blake2bTargetShift` at the BLAKE2b activation height; regtest does not
+  retarget) and be at most 2 hours ahead of the clock.
+- `ShareBlock` and `ShareHeaderBatch` carry XBT headers (`carried_xbt_headers`, raw 164-byte
+  headers, capped at 100 and 500), outside every share hash. Senders attach the path from each
+  share's XBT prev back to their node's active chain plus 3 headers.
+- Acceptance: `handle_share_block` and `handle_share_headers` check carried headers, then drop a
+  share whose XBT prev is still unknown (a batch stops at the first such share). The genesis
+  share is exempt.
+- Payout rule: `PplnsWindow::get_distribution_for_paying` pays a window share, or uncle, only if
+  its XBT prev is on the paying share's XBT chain or one block off it. Ineligible shares keep
+  their slot and weigh 0; a nephew gets no bonus for an ineligible uncle. A window with shares
+  but none eligible is `NothingEligible`, a consensus failure in `validate_bitcoin_payout`. The
+  job builder passes the template's XBT prev (`PayoutDistribution::set_paying_btc_prev`), the
+  validator the share's own.
+- Active once the node opens the header store at start-up; unit tests that do not open one see
+  upstream's behaviour. The attack test build does not open it (it plays a node without the rule).
+
 ## Attack test builds (milestone M5)
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
   parent block, for the regtest test that shows what the sharechain pays for work that can never

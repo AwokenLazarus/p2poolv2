@@ -51,6 +51,7 @@ debug-tools = []
 sim = ["p2poolv2_lib/sim"]
 # Shoal M5 attack test build; see p2poolv2_lib. Never in a release build.
 shoal-attack-dead-template = ["p2poolv2_lib/shoal-attack-dead-template"]
+shoal-attack = ["p2poolv2_lib/shoal-attack"]
 
 [dev-dependencies]
 p2poolv2_lib = { workspace = true, features = ["test-utils", "hydrapool-pplns-accounting"] }

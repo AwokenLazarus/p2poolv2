@@ -6,6 +6,8 @@
 // adapted for XBT (Bitcoin on BLAKE2b, 164-byte header v2). See SHOAL-CHANGES.md.
 
 pub mod accounting;
+/// Shoal: regtest attack test modes (feature `shoal-attack`).
+pub mod attack;
 pub use p2poolv2_wallet as address;
 pub mod auth;
 pub mod command;
@@ -26,6 +28,7 @@ pub mod stratum;
 pub mod utils;
 /// Shoal: the XBT header types, re-exported so dependent crates use the same version.
 pub use shoal_header;
+pub mod xbt_chain;
 pub mod xbt_fixtures;
 pub mod xbt_params;
 

@@ -25,6 +25,8 @@ sim = ["dep:rand"]
 # sharechain pays for work that can never become a block. Regtest test builds only; MUST NEVER
 # be enabled in a release build.
 shoal-attack-dead-template = []
+# Shoal M5: regtest attack test modes, chosen by SHOAL_ATTACK (see src/attack.rs). Never default.
+shoal-attack = []
 
 [dependencies]
 # Optional test utilities dependencies

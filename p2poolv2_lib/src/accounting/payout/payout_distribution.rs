@@ -37,6 +37,10 @@ pub trait PayoutDistribution {
         bootstrap_address: Address,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
+    /// Shoal: set the XBT prev of the template the next distribution pays, for the payout rule
+    /// (`xbt_chain`). Called only while the rule is active. Default: ignored.
+    fn set_paying_btc_prev(&mut self, _paying_btc_prev: Option<BlockHash>) {}
+
     /// Generate output distribution based on PPLNS shares weighted by difficulty.
     ///
     /// # Arguments

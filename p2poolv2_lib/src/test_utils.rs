@@ -676,6 +676,7 @@ pub fn build_block_from_work_components(path: &str, nsecs: u64) -> ShareBlock {
         transactions: vec![ShareTransaction(share_coinbase)],
         template_merkle_branches,
         bitcoin_coinbase,
+        carried_xbt_headers: Vec::new(),
     }
 }
 
@@ -822,6 +823,7 @@ pub fn empty_share_block_from_header(header: ShareHeader) -> ShareBlock {
         transactions: Vec::new(),
         template_merkle_branches: vec![],
         bitcoin_coinbase: empty_bitcoin_coinbase(),
+        carried_xbt_headers: Vec::new(),
     }
 }
 
@@ -835,6 +837,7 @@ pub fn valid_share_block_from_fixture() -> ShareBlock {
         transactions: Vec::new(),
         template_merkle_branches: vec![],
         bitcoin_coinbase: empty_bitcoin_coinbase(),
+        carried_xbt_headers: Vec::new(),
     }
 }
 
@@ -971,6 +974,7 @@ fn test_share_block(
         transactions,
         template_merkle_branches: vec![],
         bitcoin_coinbase,
+        carried_xbt_headers: Vec::new(),
     }
 }
 

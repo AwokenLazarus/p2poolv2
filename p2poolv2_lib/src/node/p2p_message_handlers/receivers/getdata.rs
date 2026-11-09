@@ -29,8 +29,12 @@ pub async fn handle_getdata_block<C: Send + Sync>(
     debug!("Received GetData::Block request for {}", block_hash);
 
     let response_message = match chain_store_handle.get_share(&block_hash) {
-        Some(share_block) => {
+        Some(mut share_block) => {
             debug!("Serving block {} to peer", block_hash);
+            // Shoal: carry the XBT headers a receiver needs to place this share's XBT prev.
+            share_block.carried_xbt_headers = crate::xbt_chain::carried_for(
+                &share_block.header.bitcoin_header.prev_blockhash,
+            );
             Message::ShareBlock(share_block)
         }
         None => {

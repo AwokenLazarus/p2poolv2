@@ -143,6 +143,9 @@ struct ConfirmedEntry {
     difficulty: u128,
     /// Uncle entries, if any, referenced by the share
     uncle_entries: Vec<UncleEntry>,
+    /// Shoal: the share's XBT prev, for the payout rule (`xbt_chain`). `None` for the genesis
+    /// share, which is always paid.
+    btc_prev: Option<BlockHash>,
 }
 
 /// Why accumulating the window stopped.
@@ -164,6 +167,29 @@ struct UncleEntry {
     internal_key: usize,
     /// Base difficulty of the uncle share before weighting.
     difficulty: u128,
+    /// Shoal: the uncle's XBT prev, for the payout rule. `None` is always paid.
+    btc_prev: Option<BlockHash>,
+}
+
+/// Shoal: the XBT prev the payout rule checks for a share, `None` for the genesis share.
+fn share_btc_prev(header: &ShareHeader) -> Option<BlockHash> {
+    if crate::shares::share_block::is_terminal_blockhash(&header.prev_share_blockhash) {
+        None
+    } else {
+        Some(header.bitcoin_header.prev_blockhash)
+    }
+}
+
+/// Shoal: whether a window entry's XBT prev is eligible under `eligibility` (always, when the
+/// payout rule is not applied).
+fn btc_prev_is_eligible(
+    btc_prev: &Option<BlockHash>,
+    eligibility: Option<&crate::xbt_chain::Eligibility>,
+) -> bool {
+    match (eligibility, btc_prev) {
+        (Some(eligibility), Some(btc_prev)) => eligibility.is_eligible(btc_prev),
+        _ => true,
+    }
 }
 
 /// Candidate headers collected while walking backward from the anchor to a
@@ -192,6 +218,9 @@ pub enum WindowError {
     /// A store read failed, or the anchor's ancestry is not stored. Either may
     /// resolve later.
     ReadFailure(Box<dyn Error + Send + Sync>),
+    /// Shoal: the window holds shares but none is on or one block off the paying share's XBT
+    /// chain (`xbt_chain`). A share paying such a window is invalid.
+    NothingEligible { anchor: BlockHash, paying: BlockHash },
 }
 
 impl fmt::Display for WindowError {
@@ -208,6 +237,11 @@ impl fmt::Display for WindowError {
                  shares"
             ),
             WindowError::ReadFailure(error) => write!(formatter, "{error}"),
+            WindowError::NothingEligible { anchor, paying } => write!(
+                formatter,
+                "PPLNS window for anchor {anchor} has no share on or next to the XBT chain \
+                 ending at {paying}"
+            ),
         }
     }
 }
@@ -343,16 +377,33 @@ impl PplnsWindow {
         start_hash: BlockHash,
         chain_store_handle: &ChainStoreHandle,
     ) -> Result<HashMap<Address, u128>, WindowError> {
+        self.get_distribution_for_paying(start_hash, None, chain_store_handle)
+    }
+
+    /// Shoal: `get_distribution_from_start_hash` with the payout rule (`xbt_chain`): a window
+    /// share, or uncle, is paid only if its XBT prev is in `eligibility`, the set for the
+    /// paying share's XBT prev. Ineligible shares keep their window slot and are paid nothing;
+    /// a nephew gets no bonus for an ineligible uncle, and an ineligible nephew gets none at
+    /// all. A window that holds shares but none eligible is `NothingEligible`. `None` applies
+    /// no rule (upstream's behaviour).
+    pub fn get_distribution_for_paying(
+        &mut self,
+        start_hash: BlockHash,
+        eligibility: Option<crate::xbt_chain::Eligibility>,
+        chain_store_handle: &ChainStoreHandle,
+    ) -> Result<HashMap<Address, u128>, WindowError> {
+        let eligibility = eligibility.as_ref();
         let (candidate_entries, confirmed_start_index) =
             self.resolve_start_hash(start_hash, chain_store_handle)?;
         let paying_height = self.paying_height(&candidate_entries, confirmed_start_index);
         let immature_share_count = self.immature_share_count(paying_height);
 
         let mut difficulty_by_key = vec![0u128; self.address_keys.len()];
-        let stop_reason = self.accumulate_window_difficulty(
+        let (stop_reason, consumed, eligible_count) = self.accumulate_window_difficulty(
             &candidate_entries,
             confirmed_start_index,
             immature_share_count,
+            eligibility,
             &mut difficulty_by_key,
         );
 
@@ -364,6 +415,16 @@ impl PplnsWindow {
                     .back()
                     .map_or(0, |entry| entry.height),
                 max_window_shares: self.max_window_shares,
+            });
+        }
+
+        if let Some(eligibility) = eligibility
+            && consumed > 0
+            && eligible_count == 0
+        {
+            return Err(WindowError::NothingEligible {
+                anchor: start_hash,
+                paying: eligibility.paying(),
             });
         }
 
@@ -468,13 +529,15 @@ impl PplnsWindow {
             .map(|(blockhash, header)| {
                 let difficulty = header.get_difficulty(self.network);
                 let uncle_entries = resolve_uncle_entries(&header.uncles, &uncle_lookup_table);
-                self.build_confirmed_entry(
+                let mut entry = self.build_confirmed_entry(
                     *blockhash,
                     0,
                     header.miner_bitcoin_address.clone(),
                     difficulty,
                     uncle_entries,
-                )
+                );
+                entry.btc_prev = share_btc_prev(header);
+                entry
             })
             .collect();
 
@@ -529,9 +592,11 @@ impl PplnsWindow {
         candidate_entries: &[ConfirmedEntry],
         confirmed_start_index: usize,
         immature_share_count: usize,
+        eligibility: Option<&crate::xbt_chain::Eligibility>,
         difficulty_by_key: &mut [u128],
-    ) -> WindowStopReason {
+    ) -> (WindowStopReason, usize, usize) {
         let mut consumed = 0;
+        let mut eligible_count = 0;
         for entry in candidate_entries
             .iter()
             .chain(self.confirmed_entries.iter().skip(confirmed_start_index))
@@ -539,24 +604,37 @@ impl PplnsWindow {
             .take(self.max_window_shares)
         {
             consumed += 1;
-            Self::add_entry_difficulty(entry, difficulty_by_key);
+            if btc_prev_is_eligible(&entry.btc_prev, eligibility) {
+                eligible_count += 1;
+            }
+            Self::add_entry_difficulty(entry, eligibility, difficulty_by_key);
         }
 
         // Distinguish "counted a full window" from "the cache ran out": only
         // the latter depends on where eviction trimmed the back.
-        if consumed == self.max_window_shares {
+        let stop_reason = if consumed == self.max_window_shares {
             WindowStopReason::WindowFull
         } else {
             WindowStopReason::OutOfEntries
-        }
+        };
+        (stop_reason, consumed, eligible_count)
     }
 
     /// Credit one share to the distribution: its miner gets the share's
     /// scaled difficulty plus the nephew bonus for each uncle it includes,
     /// and each uncle's miner gets the uncle weight.
-    fn add_entry_difficulty(entry: &ConfirmedEntry, difficulty_by_key: &mut [u128]) {
+    fn add_entry_difficulty(
+        entry: &ConfirmedEntry,
+        eligibility: Option<&crate::xbt_chain::Eligibility>,
+        difficulty_by_key: &mut [u128],
+    ) {
+        let entry_eligible = btc_prev_is_eligible(&entry.btc_prev, eligibility);
         let mut nephew_bonus: u128 = 0;
         for uncle_entry in &entry.uncle_entries {
+            // Shoal: an ineligible uncle earns nothing, and no bonus for its nephew.
+            if !btc_prev_is_eligible(&uncle_entry.btc_prev, eligibility) {
+                continue;
+            }
             difficulty_by_key[uncle_entry.internal_key] = difficulty_by_key
                 [uncle_entry.internal_key]
                 .saturating_add(uncle_entry.difficulty.saturating_mul(UNCLE_SCALED_WEIGHT));
@@ -564,6 +642,10 @@ impl PplnsWindow {
                 .saturating_add(uncle_entry.difficulty.saturating_mul(NEPHEW_SCALED_BONUS));
         }
 
+        // Shoal: an ineligible share keeps its slot and is paid nothing, bonus included.
+        if !entry_eligible {
+            return;
+        }
         difficulty_by_key[entry.internal_key] = difficulty_by_key[entry.internal_key]
             .saturating_add(
                 entry
@@ -778,13 +860,15 @@ impl PplnsWindow {
         {
             let difficulty = header.get_difficulty(self.network);
             let uncle_entries = resolve_uncle_entries(&header.uncles, &uncle_lookup_table);
-            let entry = self.build_confirmed_entry(
+            let btc_prev = share_btc_prev(&header);
+            let mut entry = self.build_confirmed_entry(
                 blockhash,
                 height,
                 header.miner_bitcoin_address,
                 difficulty,
                 uncle_entries,
             );
+            entry.btc_prev = btc_prev;
             self.confirmed_entries.push_front(entry);
         }
 
@@ -843,6 +927,7 @@ impl PplnsWindow {
             difficulty,
             uncle_entries,
             internal_key,
+            btc_prev: None,
         }
     }
 
@@ -852,6 +937,7 @@ impl PplnsWindow {
         UncleEntry {
             internal_key,
             difficulty,
+            btc_prev: None,
         }
     }
 
@@ -871,7 +957,9 @@ impl PplnsWindow {
         let mut uncle_lookup = HashMap::with_capacity(uncle_headers.len());
         for (blockhash, header) in uncle_headers {
             let difficulty = header.get_difficulty(self.network);
-            let uncle_entry = self.build_uncle_entry(header.miner_bitcoin_address, difficulty);
+            let btc_prev = share_btc_prev(&header);
+            let mut uncle_entry = self.build_uncle_entry(header.miner_bitcoin_address, difficulty);
+            uncle_entry.btc_prev = btc_prev;
             uncle_lookup.insert(blockhash, uncle_entry);
         }
         Ok(uncle_lookup)
@@ -906,6 +994,7 @@ fn resolve_uncle_entries(
             entries.push(UncleEntry {
                 difficulty: uncle_entry.difficulty,
                 internal_key: uncle_entry.internal_key,
+                btc_prev: uncle_entry.btc_prev,
             });
         } else {
             tracing::warn!("Uncle header not found for {uncle_hash}, skipping");
@@ -983,6 +1072,12 @@ mockall::mock! {
         pub fn get_distribution_from_start_hash(
             &mut self,
             start_hash: BlockHash,
+            chain_store_handle: &ChainStoreHandle,
+        ) -> Result<HashMap<Address, u128>, WindowError>;
+        pub fn get_distribution_for_paying(
+            &mut self,
+            start_hash: BlockHash,
+            eligibility: Option<crate::xbt_chain::Eligibility>,
             chain_store_handle: &ChainStoreHandle,
         ) -> Result<HashMap<Address, u128>, WindowError>;
     }
@@ -1359,6 +1454,93 @@ mod tests {
         assert!(updated);
         assert_eq!(window.confirmed_entries.len(), 5);
         assert_eq!(window.cached_tip_blockhash, Some(tip_b));
+    }
+
+    /// Shoal: a window of three shares, newest first: `c` (miner 3G, XBT prev `x`, with uncle
+    /// `u1` of miner 4G on `y`), `b` (miner 2G on `y`, with uncle `u2` of miner 5G on `x`) and
+    /// `a` (miner G on `x`). Only `x` is eligible.
+    fn payout_rule_window() -> (PplnsWindow, BlockHash, BlockHash, BlockHash, u128) {
+        let genesis_hash = BlockHash::all_zeros();
+        let header_a = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
+        let header_b = build_test_header(&header_a.block_hash().to_string(), PUBKEY_2G, 2);
+        let header_c = build_test_header(&header_b.block_hash().to_string(), PUBKEY_3G, 2);
+        let uncle_1 = build_test_header(&header_a.block_hash().to_string(), PUBKEY_4G, 2);
+        let uncle_2 = build_test_header(&genesis_hash.to_string(), PUBKEY_5G, 2);
+        let x = BlockHash::from_byte_array([0x11; 32]);
+        let y = BlockHash::from_byte_array([0x22; 32]);
+
+        let mut window = PplnsWindow::new_with_window_sizes(TEST_NETWORK, 0, 10);
+        let mut u1 = uncle_entry_from_header(&mut window, &uncle_1);
+        u1.btc_prev = Some(y);
+        let mut u2 = uncle_entry_from_header(&mut window, &uncle_2);
+        u2.btc_prev = Some(x);
+        let mut entry_c = entry_from_header_with_uncles(&mut window, &header_c, 2, vec![u1]);
+        entry_c.btc_prev = Some(x);
+        let mut entry_b = entry_from_header_with_uncles(&mut window, &header_b, 1, vec![u2]);
+        entry_b.btc_prev = Some(y);
+        let mut entry_a = entry_from_header(&mut window, &header_a, 0);
+        entry_a.btc_prev = Some(x);
+        let difficulty = entry_a.difficulty;
+        let tip = header_c.block_hash();
+        window.confirmed_entries.push_back(entry_c);
+        window.confirmed_entries.push_back(entry_b);
+        window.confirmed_entries.push_back(entry_a);
+        (window, tip, x, y, difficulty)
+    }
+
+    fn address_of(pubkey: &str) -> Address {
+        build_test_header(&BlockHash::all_zeros().to_string(), pubkey, 2).miner_bitcoin_address
+    }
+
+    #[test]
+    fn shoal_payout_rule_pays_only_eligible_shares_and_uncles() {
+        let (mut window, tip, x, _y, difficulty) = payout_rule_window();
+        let eligibility = crate::xbt_chain::Eligibility::from_hashes(x, [x]);
+        let distribution = window
+            .get_distribution_for_paying(tip, Some(eligibility), &MockChainStoreHandle::default())
+            .unwrap();
+        // a and c are paid in full; c gets no bonus for its ineligible uncle u1.
+        assert_eq!(distribution.get(&address_of(PUBKEY_G)), Some(&(difficulty * DIFFICULTY_SCALE)));
+        assert_eq!(distribution.get(&address_of(PUBKEY_3G)), Some(&(difficulty * DIFFICULTY_SCALE)));
+        // b is ineligible and gets nothing; its eligible uncle u2 keeps its uncle weight.
+        assert_eq!(distribution.get(&address_of(PUBKEY_2G)), None);
+        assert_eq!(
+            distribution.get(&address_of(PUBKEY_5G)),
+            Some(&(difficulty * UNCLE_SCALED_WEIGHT))
+        );
+        // u1 is ineligible.
+        assert_eq!(distribution.get(&address_of(PUBKEY_4G)), None);
+    }
+
+    #[test]
+    fn shoal_payout_rule_off_pays_everyone() {
+        let (mut window, tip, _x, _y, _difficulty) = payout_rule_window();
+        let distribution = window
+            .get_distribution_for_paying(tip, None, &MockChainStoreHandle::default())
+            .unwrap();
+        assert_eq!(distribution.len(), 5);
+    }
+
+    #[test]
+    fn shoal_payout_rule_window_with_nothing_eligible_is_refused() {
+        let (mut window, tip, _x, _y, _difficulty) = payout_rule_window();
+        let elsewhere = BlockHash::from_byte_array([0x33; 32]);
+        let eligibility = crate::xbt_chain::Eligibility::from_hashes(elsewhere, [elsewhere]);
+        let result = window.get_distribution_for_paying(
+            tip,
+            Some(eligibility),
+            &MockChainStoreHandle::default(),
+        );
+        assert!(matches!(result, Err(WindowError::NothingEligible { .. })));
+    }
+
+    #[test]
+    fn shoal_genesis_share_is_always_eligible() {
+        let genesis_hash = BlockHash::all_zeros();
+        let header = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
+        assert_eq!(share_btc_prev(&header), None);
+        let child = build_test_header(&header.block_hash().to_string(), PUBKEY_G, 2);
+        assert_eq!(share_btc_prev(&child), Some(child.bitcoin_header.prev_blockhash));
     }
 
     #[test]

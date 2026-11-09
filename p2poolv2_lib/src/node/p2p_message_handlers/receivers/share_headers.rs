@@ -196,6 +196,10 @@ pub async fn handle_share_headers<C: Send + Sync>(
     block_fetcher_handle: BlockFetcherHandle,
     share_validator: &(dyn ShareValidator + Send + Sync),
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Shoal attack test (`private-fork`): ignore peers while mining privately.
+    if crate::attack::private_now() {
+        return Ok(());
+    }
     let share_headers = header_batch.headers();
     debug!("Received {} ShareHeaders", share_headers.len());
     if !share_headers.is_empty() {
@@ -244,6 +248,29 @@ pub async fn handle_share_headers<C: Send + Sync>(
         }
         return Err(sync_error.into());
     }
+
+    // Shoal: accept shares only once their XBT prev is known (`xbt_chain`). Check the carried
+    // headers, then stop the batch at the first share on an unknown XBT prev: the rest of the
+    // batch may build on it.
+    let mut header_batch = header_batch;
+    crate::xbt_chain::absorb(header_batch.carried_xbt_headers());
+    if let Some(position) = header_batch.headers().iter().position(|header| {
+        !crate::shares::share_block::is_terminal_blockhash(&header.prev_share_blockhash)
+            && !crate::xbt_chain::knows(&header.bitcoin_header.prev_blockhash)
+    }) {
+        let dropped = &header_batch.headers()[position];
+        warn!(
+            "Dropping share header {} and the {} after it: its XBT prev {} is not a known XBT block",
+            dropped.block_hash(),
+            header_batch.len() - position - 1,
+            dropped.bitcoin_header.prev_blockhash
+        );
+        header_batch.truncate(position);
+        if header_batch.is_empty() {
+            return Ok(());
+        }
+    }
+    let share_headers = header_batch.headers();
 
     // Phase 2: Store each header's coinbase merkle branch, so headers held
     // without their bodies can be served on with the branch their proof needs,

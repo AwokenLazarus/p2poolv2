@@ -50,7 +50,13 @@ fn build_output_distribution(
     let bitcoin_difficulty =
         bitcoin::Target::from_compact(compact_target).difficulty(context.config.network);
 
-    context
+    // Shoal: the payout rule pays from the template's XBT prev (`xbt_chain`).
+    if crate::xbt_chain::is_active() {
+        let paying = template.previousblockhash.parse::<bitcoin::BlockHash>().ok();
+        context.payout.set_paying_btc_prev(paying);
+    }
+
+    let distribution = context
         .payout
         .get_output_distribution(
             &context.chain_store_handle,
@@ -61,7 +67,20 @@ fn build_output_distribution(
         )
         .map_err(|error| WorkError {
             message: format!("Payout distribution failed: {error}"),
-        })
+        })?;
+    // Shoal attack test (`wrong-split`): pay the whole reward to the attacker.
+    if crate::attack::is(crate::attack::Mode::WrongSplit)
+        && let Some(address) = crate::attack::address()
+    {
+        let total = distribution
+            .iter()
+            .fold(bitcoin::Amount::ZERO, |sum, output| sum + output.amount);
+        return Ok(vec![OutputPair {
+            address,
+            amount: total,
+        }]);
+    }
+    Ok(distribution)
 }
 
 /// Build a PreparedNotifyParams from a template using the notify context.

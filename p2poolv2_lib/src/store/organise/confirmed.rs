@@ -20,6 +20,9 @@ use super::{Chain, Height, TopResult, height_to_key_with_suffix};
 const CONFIRMED_SUFFIX: &str = ":f";
 const TOP_CONFIRMED_KEY: &str = "meta:top_confirmed_height";
 
+/// Shoal: reorgs replacing at least this many confirmed shares raise the alarm.
+pub const SHOAL_REORG_ALARM_DEPTH: usize = 6;
+
 impl Store {
     /// Check that every block in the list has its body stored and
     /// that all uncles referenced by each block also have their
@@ -257,6 +260,15 @@ impl Store {
         }
 
         tracing::info!("Chain reorg completed to height {new_top_height:?}");
+        // Shoal: a deep reorg means someone published a long private chain (or a partition
+        // healed). Raise the alarm so operators and monitors see it.
+        let replaced = reorged_out_chain.len().saturating_sub(1);
+        if replaced >= SHOAL_REORG_ALARM_DEPTH {
+            tracing::warn!(
+                "SHARECHAIN REORG ALARM: {replaced} confirmed shares replaced by a heavier fork \
+                 from {fork_point:?}"
+            );
+        }
         Ok(new_top_height)
     }
 

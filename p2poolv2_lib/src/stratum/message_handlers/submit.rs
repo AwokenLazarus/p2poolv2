@@ -125,8 +125,11 @@ pub(crate) async fn handle_submit<'a, D: DifficultyAdjusterTrait>(
     // confirmation -> re-notify loop) distort the measured uncle rate. Real
     // block-finds in the load test go only through the statistical block-find
     // path. See docs/simulation/load-test-plan.md.
+    // Shoal attack test (`withhold`): never submit the block.
     #[cfg(not(feature = "sim"))]
-    if validation_result.meets_bitcoin_difficulty {
+    if validation_result.meets_bitcoin_difficulty
+        && !crate::attack::is(crate::attack::Mode::Withhold)
+    {
         // Submit block asap - decode transactions only for this rare case
         let block = build_full_block(
             validation_result.header,

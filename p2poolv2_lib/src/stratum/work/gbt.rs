@@ -110,6 +110,22 @@ async fn get_block_template(
     }
 }
 
+/// Shoal: store the template's XBT parent, and the headers back to one already stored, before
+/// any job builds on it, so the payout rule can place it (`xbt_chain`). Returns false (skip the
+/// template) when that fails; the next poll retries.
+async fn store_template_parent(bitcoind: &BitcoindRpcClient, template: &BlockTemplate) -> bool {
+    let Ok(parent) = template.previousblockhash.parse::<bitcoin::BlockHash>() else {
+        return true;
+    };
+    match crate::xbt_chain::sync_from_node(bitcoind, &parent).await {
+        Ok(_) => true,
+        Err(error) => {
+            error!("Cannot store the template's XBT parent {parent}, skipping it: {error}");
+            false
+        }
+    }
+}
+
 /// Start a task to fetch block templates from bitcoind
 ///
 /// Listen to zmqpubhashblock from bitcoind.
@@ -151,6 +167,7 @@ pub async fn start_gbt(
             tokio::select! {
                 _ = interval.tick() => {
                     match get_block_template(&bitcoind, network).await {
+                        Ok(template) if !store_template_parent(&bitcoind, &template).await => {}
                         Ok(template) => {
                             if result_tx
                                 .send(NotifyCmd::SendToAll {
@@ -172,6 +189,7 @@ pub async fn start_gbt(
                         Some(_) => {
                             debug!("Received ZMQ block notification");
                             match get_block_template(&bitcoind, network).await {
+                                Ok(template) if !store_template_parent(&bitcoind, &template).await => {}
                                 Ok(template) => {
                                     if result_tx
                                         .send(NotifyCmd::SendToAll {

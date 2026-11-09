@@ -304,6 +304,7 @@ impl Store {
             transactions,
             template_merkle_branches,
             bitcoin_coinbase,
+            carried_xbt_headers: Vec::new(),
         })
     }
 

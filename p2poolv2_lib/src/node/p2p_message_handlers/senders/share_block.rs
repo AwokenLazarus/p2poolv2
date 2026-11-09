@@ -20,12 +20,53 @@ use tracing::debug;
 /// select loop (which would happen if we awaited on the bounded
 /// swarm_tx channel that the actor also drains).
 pub fn send_share_block_broadcast(
-    share_block: ShareBlock,
+    mut share_block: ShareBlock,
     connected_peers: &[PeerId],
     peer_block_knowledge: &mut PeerBlockKnowledge,
     request_sender: &mut impl RequestSender,
 ) {
     let block_hash = share_block.block_hash();
+    // Shoal: carry the XBT headers a receiver needs to place this share's XBT prev.
+    if share_block.carried_xbt_headers.is_empty() {
+        share_block.carried_xbt_headers =
+            crate::xbt_chain::carried_for(&share_block.header.bitcoin_header.prev_blockhash);
+    }
+
+    // Shoal attack test (`private-fork`): hold shares back during the private period, then
+    // release them all, oldest first.
+    if crate::attack::is(crate::attack::Mode::PrivateFork) {
+        let mut held = PRIVATE_HELD.lock().expect("held shares lock");
+        if crate::attack::private_now() {
+            held.push(share_block);
+            return;
+        }
+        if !held.is_empty() {
+            tracing::warn!("SHOAL ATTACK: releasing {} private shares", held.len());
+            for block in held.drain(..) {
+                for peer_id in connected_peers {
+                    request_sender.send_request(peer_id, Message::ShareBlock(block.clone()));
+                }
+            }
+        }
+    }
+    // Shoal attack test (`copy`): a bad copy of each share first (same share, changed
+    // coinbase), and a copy under the attacker's address after it.
+    let copies = if crate::attack::is(crate::attack::Mode::Copy) {
+        let mut changed_coinbase = share_block.clone();
+        if let Some(output) = changed_coinbase.bitcoin_coinbase.output.first_mut() {
+            output.value = bitcoin::Amount::from_sat(output.value.to_sat().saturating_sub(1));
+        }
+        for peer_id in connected_peers {
+            request_sender.send_request(peer_id, Message::ShareBlock(changed_coinbase.clone()));
+        }
+        crate::attack::address().map(|address| {
+            let mut renamed = share_block.clone();
+            renamed.header.miner_bitcoin_address = address;
+            renamed
+        })
+    } else {
+        None
+    };
 
     for peer_id in connected_peers {
         if peer_block_knowledge.peer_knows_block(peer_id, &block_hash) {
@@ -36,7 +77,15 @@ pub fn send_share_block_broadcast(
             peer_block_knowledge.record_block_known(peer_id, block_hash);
         }
     }
+    if let Some(renamed) = copies {
+        for peer_id in connected_peers {
+            request_sender.send_request(peer_id, Message::ShareBlock(renamed.clone()));
+        }
+    }
 }
+
+/// Shoal attack test (`private-fork`): shares held back during the private period.
+static PRIVATE_HELD: std::sync::Mutex<Vec<ShareBlock>> = std::sync::Mutex::new(Vec::new());
 
 #[cfg(test)]
 mod tests {

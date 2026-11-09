@@ -38,6 +38,10 @@ pub async fn handle_share_block(
     share_validator: &(dyn ShareValidator + Send + Sync),
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     debug!("Received ShareBlock: {:?}", share_block);
+    // Shoal attack test (`private-fork`): ignore peers while mining privately.
+    if crate::attack::private_now() {
+        return Ok(());
+    }
 
     let block_hash = share_block.block_hash();
 
@@ -103,6 +107,17 @@ pub async fn handle_share_block(
         return Err(
             format!("Share block body does not match its header: {validation_error}").into(),
         );
+    }
+
+    // Shoal: accept the share only once its XBT prev is known (`xbt_chain`). Check the headers
+    // it carries first; a share on an XBT block nobody can show is dropped, not stored.
+    crate::xbt_chain::absorb(&share_block.carried_xbt_headers);
+    let btc_prev = share_block.header.bitcoin_header.prev_blockhash;
+    if !crate::shares::share_block::is_terminal_blockhash(&share_block.header.prev_share_blockhash)
+        && !crate::xbt_chain::knows(&btc_prev)
+    {
+        warn!("Dropping share block {block_hash}: its XBT prev {btc_prev} is not a known XBT block");
+        return Ok(());
     }
 
     // Send to BlockReceiver actor for dependency buffering, ASERT

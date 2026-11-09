@@ -64,6 +64,7 @@ pub async fn handle_stratum_share(
         transactions: share_transactions,
         template_merkle_branches,
         bitcoin_coinbase,
+        carried_xbt_headers: Vec::new(),
     };
 
     debug!(

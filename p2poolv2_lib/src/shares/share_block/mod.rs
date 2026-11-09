@@ -382,6 +382,11 @@ pub struct ShareBlock {
     /// different coinbase is a bad copy rather than another block.
     #[serde(default = "empty_bitcoin_coinbase")]
     pub bitcoin_coinbase: Transaction,
+    /// Shoal: XBT headers carried so a receiver can place this share's XBT prev (see
+    /// `xbt_chain`). Not part of the block hash and not stored: the proof of work already fixes
+    /// the XBT prev, and every carried header is checked on receipt. Oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub carried_xbt_headers: Vec<Header>,
 }
 
 /// The bitcoin coinbase of a block written before `ShareBlock` carried one:
@@ -521,6 +526,7 @@ impl ShareBlock {
             transactions,
             template_merkle_branches: vec![],
             bitcoin_coinbase,
+            carried_xbt_headers: Vec::new(),
         })
     }
 }
@@ -547,6 +553,13 @@ impl Encodable for ShareBlock {
             len += node.consensus_encode(w)?;
         }
         len += self.bitcoin_coinbase.consensus_encode(w)?;
+        // Shoal: carried XBT headers, raw 164-byte headers.
+        len += VarInt(self.carried_xbt_headers.len() as u64).consensus_encode(w)?;
+        for header in &self.carried_xbt_headers {
+            let bytes = header.to_bytes();
+            w.write_all(&bytes)?;
+            len += bytes.len();
+        }
         Ok(len)
     }
 }
@@ -577,11 +590,23 @@ impl Decodable for ShareBlock {
             template_merkle_branches.push(TxMerkleNode::consensus_decode(r)?);
         }
         let bitcoin_coinbase = Transaction::consensus_decode(r)?;
+        // Shoal: carried XBT headers.
+        let carried_count = VarInt::consensus_decode(r)?.0 as usize;
+        if carried_count > crate::xbt_chain::MAX_CARRIED_HEADERS_PER_SHARE {
+            return Err(ParseFailed("share block carries too many XBT headers"));
+        }
+        let mut carried_xbt_headers = Vec::with_capacity(carried_count);
+        for _ in 0..carried_count {
+            let mut bytes = [0u8; shoal_header::XBT_HEADER_SIZE];
+            r.read_exact(&mut bytes)?;
+            carried_xbt_headers.push(Header::from_bytes(&bytes)?);
+        }
         Ok(ShareBlock {
             header,
             transactions,
             template_merkle_branches,
             bitcoin_coinbase,
+            carried_xbt_headers,
         })
     }
 }

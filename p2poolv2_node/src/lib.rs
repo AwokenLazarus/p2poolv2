@@ -160,6 +160,8 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
 
     // Shoal: per-network sharechain parameters must be fixed before genesis is built.
     p2poolv2_lib::xbt_params::set_network(config.stratum.network);
+    // Shoal: start the attack-test clock (does nothing unless built with `shoal-attack`).
+    p2poolv2_lib::attack::start();
     match p2poolv2_lib::xbt_params::init_regtest_genesis_from_env() {
         Ok((time, bits)) => {
             if let Some(time) = time {
@@ -173,6 +175,17 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
             error!("Invalid regtest genesis override: {error}");
             return Err(ExitCode::FAILURE);
         }
+    }
+    // Shoal: the XBT header store, which puts the "mine on the current XBT chain" payout rule
+    // in force (`xbt_chain`). An attack test build plays a node without the rule.
+    #[cfg(not(feature = "shoal-attack-dead-template"))]
+    {
+        let header_file = p2poolv2_lib::xbt_chain::store_file_for(&config.store.path);
+        if let Err(error) = p2poolv2_lib::xbt_chain::init(config.stratum.network, &header_file) {
+            error!("Cannot open the XBT header store {}: {error}", header_file.display());
+            return Err(ExitCode::FAILURE);
+        }
+        info!("XBT payout rule active; header store {}", header_file.display());
     }
     let genesis = ShareBlock::build_genesis_for_network(config.stratum.network).unwrap();
     let store = Arc::new(Store::new(config.store.path.clone(), false).unwrap());

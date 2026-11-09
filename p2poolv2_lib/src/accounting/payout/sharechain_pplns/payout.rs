@@ -30,6 +30,8 @@ use std::sync::{Arc, RwLock};
 /// acquires a write lock to update the window and compute the distribution.
 pub struct Payout {
     pplns_window: Arc<RwLock<PplnsWindow>>,
+    /// Shoal: the XBT prev of the template being paid, for the payout rule (`xbt_chain`).
+    paying_btc_prev: Option<BlockHash>,
 }
 
 impl Payout {
@@ -37,6 +39,7 @@ impl Payout {
     pub fn new(network: bitcoin::Network) -> Self {
         Self {
             pplns_window: Arc::new(RwLock::new(PplnsWindow::new(network))),
+            paying_btc_prev: None,
         }
     }
 
@@ -55,6 +58,7 @@ impl Payout {
                 maturity_skip,
                 max_window_shares,
             ))),
+            paying_btc_prev: None,
         }
     }
 
@@ -68,6 +72,10 @@ impl Payout {
 }
 
 impl PayoutDistribution for Payout {
+    fn set_paying_btc_prev(&mut self, paying_btc_prev: Option<BlockHash>) {
+        self.paying_btc_prev = paying_btc_prev;
+    }
+
     /// Fill payout distribution from the incrementally maintained PPLNS window.
     ///
     /// The window is `PPLNS_WINDOW_SHARES` shares below the ones not yet
@@ -101,8 +109,26 @@ impl PayoutDistribution for Payout {
             .into());
         }
 
+        // Shoal: the payout rule, measured from the template's XBT prev. The GBT poller stores
+        // a template's parent before serving it, so an unknown one means the rule is not in
+        // force for this node (an attack test build); pay as upstream does.
+        let eligibility = match self
+            .paying_btc_prev
+            .and_then(|paying| crate::xbt_chain::eligibility(&paying))
+        {
+            None => None,
+            Some(Ok(eligibility)) => Some(eligibility),
+            Some(Err(crate::xbt_chain::EligibilityError::UnknownPayingPrev(paying))) => {
+                tracing::warn!(
+                    "Template XBT prev {paying} is not in the header store; paying without the \
+                     payout rule"
+                );
+                None
+            }
+            Some(Err(error)) => return Err(error.into()),
+        };
         let address_difficulty_map =
-            window.get_distribution_from_start_hash(anchor, chain_store_handle)?;
+            window.get_distribution_for_paying(anchor, eligibility, chain_store_handle)?;
 
         append_proportional_distribution(
             &address_difficulty_map,

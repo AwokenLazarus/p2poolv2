@@ -895,13 +895,44 @@ impl DefaultShareValidator {
         chain_store_handle: &ChainStoreHandle,
         pplns_window: Arc<RwLock<PplnsWindow>>,
     ) -> Result<(), ValidationError> {
+        // Shoal attack test (`wrong-split`): this node plays one without the payout check.
+        if crate::attack::is(crate::attack::Mode::WrongSplit) {
+            return Ok(());
+        }
+        // Shoal: the payout rule (`xbt_chain`), measured from this share's own XBT prev. The
+        // acceptance gate only stores shares whose XBT prev is known, so an unknown one here is
+        // a local share on a template the header store has not caught up with: retry later.
+        let eligibility = match crate::xbt_chain::eligibility(
+            &share.header.bitcoin_header.prev_blockhash,
+        ) {
+            None => None,
+            Some(Ok(eligibility)) => Some(eligibility),
+            Some(Err(error)) => {
+                return Err(ValidationError::unresolvable(format!(
+                    "Cannot place the share's XBT prev for the payout rule: {error}"
+                )));
+            }
+        };
+
         let mut window = pplns_window
             .write()
             .expect("PPLNS window lock poisoned on write");
 
-        let address_difficulty_map = window
-            .get_distribution_from_start_hash(share.header.prev_share_blockhash, chain_store_handle)
+        let distribution = match eligibility {
+            Some(eligibility) => window.get_distribution_for_paying(
+                share.header.prev_share_blockhash,
+                Some(eligibility),
+                chain_store_handle,
+            ),
+            None => window
+                .get_distribution_from_start_hash(share.header.prev_share_blockhash, chain_store_handle),
+        };
+        let address_difficulty_map = distribution
             .map_err(|error| match error {
+                // Shoal: nothing in the window is on or next to this share's XBT chain.
+                WindowError::NothingEligible { .. } => ValidationError::consensus(format!(
+                    "Share pays a PPLNS window with no eligible share: {error}"
+                )),
                 // The anchor is below the confirmed entries this node's window
                 // retains, and the window's oldest entry only moves forward
                 // with the confirmed tip, so no retry can bring it back into

@@ -189,6 +189,9 @@ pub struct ShareHeaderBatch {
     /// Index into `branches` for the header at the same position.
     branch_indexes: Vec<u16>,
     branches: Vec<Vec<TxMerkleNode>>,
+    /// Shoal: XBT headers the receiver needs to place the batch's XBT prevs (see `xbt_chain`),
+    /// deduplicated, oldest first. Not part of any share hash.
+    carried_xbt_headers: Vec<shoal_header::XbtHeader>,
 }
 
 impl ShareHeaderBatch {
@@ -217,7 +220,25 @@ impl ShareHeaderBatch {
             headers,
             branch_indexes,
             branches,
+            carried_xbt_headers: Vec::new(),
         }
+    }
+
+    /// Shoal: attach the XBT headers this batch carries.
+    pub fn with_carried_xbt_headers(mut self, headers: Vec<shoal_header::XbtHeader>) -> Self {
+        self.carried_xbt_headers = headers;
+        self
+    }
+
+    /// Shoal: the XBT headers this batch carries.
+    pub fn carried_xbt_headers(&self) -> &[shoal_header::XbtHeader] {
+        &self.carried_xbt_headers
+    }
+
+    /// Shoal: keep only the first `count` headers (the rest depend on a dropped share).
+    pub fn truncate(&mut self, count: usize) {
+        self.headers.truncate(count);
+        self.branch_indexes.truncate(count);
     }
 
     /// The headers, in message order.
@@ -272,6 +293,13 @@ impl Encodable for ShareHeaderBatch {
             len += branch_index.consensus_encode(w)?;
             len += (!root_is_derivable).consensus_encode(w)?;
             len += header.consensus_encode_with(w, !root_is_derivable)?;
+        }
+        // Shoal: carried XBT headers, raw 164-byte headers.
+        len += VarInt::from(self.carried_xbt_headers.len()).consensus_encode(w)?;
+        for header in &self.carried_xbt_headers {
+            let bytes = header.to_bytes();
+            w.write_all(&bytes)?;
+            len += bytes.len();
         }
         Ok(len)
     }
@@ -334,10 +362,24 @@ impl Decodable for ShareHeaderBatch {
             headers.push(header);
             branch_indexes.push(branch_index);
         }
+        // Shoal: carried XBT headers.
+        let carried_count = VarInt::consensus_decode(r)?.0 as usize;
+        if carried_count > crate::xbt_chain::MAX_CARRIED_HEADERS_PER_BATCH {
+            return Err(encode::Error::ParseFailed(
+                "Share header batch carries too many XBT headers",
+            ));
+        }
+        let mut carried_xbt_headers = Vec::with_capacity(carried_count);
+        for _ in 0..carried_count {
+            let mut bytes = [0u8; shoal_header::XBT_HEADER_SIZE];
+            r.read_exact(&mut bytes)?;
+            carried_xbt_headers.push(shoal_header::XbtHeader::from_bytes(&bytes)?);
+        }
         Ok(Self {
             headers,
             branch_indexes,
             branches,
+            carried_xbt_headers,
         })
     }
 
@@ -1039,6 +1081,8 @@ mod tests {
             .unwrap();
         bytes.resize(bytes.len() + MAX_SHARE_HEADER_BATCH_LENGTH, 0);
         VarInt::from(0usize).consensus_encode(&mut bytes).unwrap();
+        // Shoal: no carried XBT headers.
+        VarInt::from(0usize).consensus_encode(&mut bytes).unwrap();
 
         let result: Result<ShareHeaderBatch, _> = encode::deserialize(&bytes);
 
@@ -1092,6 +1136,8 @@ mod tests {
         0u16.consensus_encode(&mut bytes).unwrap();
         false.consensus_encode(&mut bytes).unwrap();
         forged.consensus_encode_with(&mut bytes, false).unwrap();
+        // Shoal: no carried XBT headers.
+        VarInt::from(0usize).consensus_encode(&mut bytes).unwrap();
 
         let decoded: ShareHeaderBatch = encode::deserialize(&bytes).unwrap();
 

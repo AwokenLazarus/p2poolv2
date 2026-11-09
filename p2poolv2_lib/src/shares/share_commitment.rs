@@ -505,6 +505,7 @@ mod tests {
             transactions: share_transactions,
             template_merkle_branches: vec![],
             bitcoin_coinbase: coinbase,
+            carried_xbt_headers: Vec::new(),
         }
     }
 
