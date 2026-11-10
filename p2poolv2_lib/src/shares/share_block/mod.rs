@@ -989,11 +989,25 @@ mod tests {
                 .skip(immature_share_count)
                 .take(crate::xbt_params::pplns_window_shares(network))
             {
+                // Shoal: the genesis share (index 0) is never paid.
+                if prior_index == 0 {
+                    continue;
+                }
                 let prior_header = &blocks[prior_index].header;
                 let share_difficulty = prior_header.get_difficulty(network);
                 *address_difficulty_map
                     .entry(prior_header.miner_bitcoin_address.clone())
                     .or_insert(0) += share_difficulty.saturating_mul(difficulty_scale);
+            }
+            // Shoal: the first share's window holds only the genesis share, so it pays one
+            // address of its choosing (no donation or fee in this fixture).
+            if address_difficulty_map.is_empty() {
+                let payee = bitcoin::Address::from_script(
+                    &block.bitcoin_coinbase.output[0].script_pubkey,
+                    network,
+                )
+                .expect("first share pays an address");
+                address_difficulty_map.insert(payee, 1);
             }
 
             // Build outputs the same way the validator does

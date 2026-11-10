@@ -144,8 +144,11 @@ struct ConfirmedEntry {
     /// Uncle entries, if any, referenced by the share
     uncle_entries: Vec<UncleEntry>,
     /// Shoal: the share's XBT prev, for the payout rule (`xbt_chain`). `None` for the genesis
-    /// share, which is always paid.
+    /// share.
     btc_prev: Option<BlockHash>,
+    /// Shoal: whether this is the genesis share, which is never paid: it only fixes where the
+    /// chain starts. Set from the share's header where it is loaded.
+    is_genesis: bool,
 }
 
 /// Why accumulating the window stopped.
@@ -220,7 +223,10 @@ pub enum WindowError {
     ReadFailure(Box<dyn Error + Send + Sync>),
     /// Shoal: the window holds shares but none is on or one block off the paying share's XBT
     /// chain (`xbt_chain`). A share paying such a window is invalid.
-    NothingEligible { anchor: BlockHash, paying: BlockHash },
+    NothingEligible {
+        anchor: BlockHash,
+        paying: BlockHash,
+    },
 }
 
 impl fmt::Display for WindowError {
@@ -384,7 +390,8 @@ impl PplnsWindow {
     /// share, or uncle, is paid only if its XBT prev is in `eligibility`, the set for the
     /// paying share's XBT prev. Ineligible shares keep their window slot and are paid nothing;
     /// a nephew gets no bonus for an ineligible uncle, and an ineligible nephew gets none at
-    /// all. A window that holds shares but none eligible is `NothingEligible`. `None` applies
+    /// all. A window that holds shares but none eligible is `NothingEligible`. The genesis share
+    /// is never paid, so a window that holds only it gives an empty distribution. `None` applies
     /// no rule (upstream's behaviour).
     pub fn get_distribution_for_paying(
         &mut self,
@@ -399,7 +406,7 @@ impl PplnsWindow {
         let immature_share_count = self.immature_share_count(paying_height);
 
         let mut difficulty_by_key = vec![0u128; self.address_keys.len()];
-        let (stop_reason, consumed, eligible_count) = self.accumulate_window_difficulty(
+        let (stop_reason, payable_count, eligible_count) = self.accumulate_window_difficulty(
             &candidate_entries,
             confirmed_start_index,
             immature_share_count,
@@ -419,7 +426,7 @@ impl PplnsWindow {
         }
 
         if let Some(eligibility) = eligibility
-            && consumed > 0
+            && payable_count > 0
             && eligible_count == 0
         {
             return Err(WindowError::NothingEligible {
@@ -537,6 +544,7 @@ impl PplnsWindow {
                     uncle_entries,
                 );
                 entry.btc_prev = share_btc_prev(header);
+                entry.is_genesis = entry.btc_prev.is_none();
                 entry
             })
             .collect();
@@ -596,6 +604,8 @@ impl PplnsWindow {
         difficulty_by_key: &mut [u128],
     ) -> (WindowStopReason, usize, usize) {
         let mut consumed = 0;
+        // Shoal: shares that could be paid (all but the genesis share) and the eligible ones.
+        let mut payable_count = 0;
         let mut eligible_count = 0;
         for entry in candidate_entries
             .iter()
@@ -604,8 +614,11 @@ impl PplnsWindow {
             .take(self.max_window_shares)
         {
             consumed += 1;
-            if btc_prev_is_eligible(&entry.btc_prev, eligibility) {
-                eligible_count += 1;
+            if !entry.is_genesis {
+                payable_count += 1;
+                if btc_prev_is_eligible(&entry.btc_prev, eligibility) {
+                    eligible_count += 1;
+                }
             }
             Self::add_entry_difficulty(entry, eligibility, difficulty_by_key);
         }
@@ -617,7 +630,7 @@ impl PplnsWindow {
         } else {
             WindowStopReason::OutOfEntries
         };
-        (stop_reason, consumed, eligible_count)
+        (stop_reason, payable_count, eligible_count)
     }
 
     /// Credit one share to the distribution: its miner gets the share's
@@ -642,8 +655,11 @@ impl PplnsWindow {
                 .saturating_add(uncle_entry.difficulty.saturating_mul(NEPHEW_SCALED_BONUS));
         }
 
-        // Shoal: an ineligible share keeps its slot and is paid nothing, bonus included.
-        if !entry_eligible {
+        // Shoal: an ineligible share keeps its slot and is paid nothing, bonus included. The
+        // genesis share (no XBT prev) is never paid either: Shoal pays no one for starting the
+        // chain. A window that holds nothing else gives an empty distribution, which the first
+        // share of a chain pays as it likes (see `bootstrap_payee` in share validation).
+        if !entry_eligible || entry.is_genesis {
             return;
         }
         difficulty_by_key[entry.internal_key] = difficulty_by_key[entry.internal_key]
@@ -868,6 +884,7 @@ impl PplnsWindow {
                 difficulty,
                 uncle_entries,
             );
+            entry.is_genesis = btc_prev.is_none();
             entry.btc_prev = btc_prev;
             self.confirmed_entries.push_front(entry);
         }
@@ -928,6 +945,7 @@ impl PplnsWindow {
             uncle_entries,
             internal_key,
             btc_prev: None,
+            is_genesis: false,
         }
     }
 
@@ -1165,7 +1183,7 @@ mod tests {
         count: usize,
         miner_pubkeys: &[&str],
     ) -> (Vec<ConfirmedHeaderResult>, BlockHash) {
-        let genesis_hash = BlockHash::all_zeros();
+        let genesis_hash = crate::test_utils::below_window_parent();
         let mut headers = Vec::with_capacity(count);
         let mut prev_hash = genesis_hash.to_string();
 
@@ -1500,8 +1518,14 @@ mod tests {
             .get_distribution_for_paying(tip, Some(eligibility), &MockChainStoreHandle::default())
             .unwrap();
         // a and c are paid in full; c gets no bonus for its ineligible uncle u1.
-        assert_eq!(distribution.get(&address_of(PUBKEY_G)), Some(&(difficulty * DIFFICULTY_SCALE)));
-        assert_eq!(distribution.get(&address_of(PUBKEY_3G)), Some(&(difficulty * DIFFICULTY_SCALE)));
+        assert_eq!(
+            distribution.get(&address_of(PUBKEY_G)),
+            Some(&(difficulty * DIFFICULTY_SCALE))
+        );
+        assert_eq!(
+            distribution.get(&address_of(PUBKEY_3G)),
+            Some(&(difficulty * DIFFICULTY_SCALE))
+        );
         // b is ineligible and gets nothing; its eligible uncle u2 keeps its uncle weight.
         assert_eq!(distribution.get(&address_of(PUBKEY_2G)), None);
         assert_eq!(
@@ -1540,7 +1564,48 @@ mod tests {
         let header = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
         assert_eq!(share_btc_prev(&header), None);
         let child = build_test_header(&header.block_hash().to_string(), PUBKEY_G, 2);
-        assert_eq!(share_btc_prev(&child), Some(child.bitcoin_header.prev_blockhash));
+        assert_eq!(
+            share_btc_prev(&child),
+            Some(child.bitcoin_header.prev_blockhash)
+        );
+    }
+
+    #[test]
+    fn shoal_genesis_share_is_never_paid() {
+        let genesis = build_test_header(&BlockHash::all_zeros().to_string(), PUBKEY_G, 2);
+        let child = build_test_header(&genesis.block_hash().to_string(), PUBKEY_2G, 2);
+        let mut window = PplnsWindow::new(TEST_NETWORK);
+        let child_entry = entry_from_header(&mut window, &child, 1);
+        let mut genesis_entry = entry_from_header(&mut window, &genesis, 0);
+        genesis_entry.is_genesis = true;
+        window.confirmed_entries.push_back(child_entry);
+        window.confirmed_entries.push_back(genesis_entry);
+
+        let result = window
+            .get_distribution_from_start_hash(child.block_hash(), &MockChainStoreHandle::default())
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[&child.miner_bitcoin_address],
+            child.get_difficulty(TEST_NETWORK) * DIFFICULTY_SCALE
+        );
+        assert!(!result.contains_key(&genesis.miner_bitcoin_address));
+    }
+
+    #[test]
+    fn shoal_window_of_only_genesis_pays_no_one() {
+        let genesis = build_test_header(&BlockHash::all_zeros().to_string(), PUBKEY_G, 2);
+        let mut window = PplnsWindow::new(TEST_NETWORK);
+        let mut genesis_entry = entry_from_header(&mut window, &genesis, 0);
+        genesis_entry.is_genesis = true;
+        window.confirmed_entries.push_back(genesis_entry);
+        let result = window
+            .get_distribution_from_start_hash(
+                genesis.block_hash(),
+                &MockChainStoreHandle::default(),
+            )
+            .unwrap();
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -2745,7 +2810,7 @@ mod tests {
     #[test]
     fn test_distribution_pays_every_share_of_a_chain_shorter_than_the_window() {
         const MAX_SHARES: usize = 10;
-        let genesis = BlockHash::all_zeros();
+        let genesis = crate::test_utils::below_window_parent();
         let a = build_test_header(&genesis.to_string(), PUBKEY_G, 2);
         let b = build_test_header(&a.block_hash().to_string(), PUBKEY_2G, 2);
         let c = build_test_header(&b.block_hash().to_string(), PUBKEY_3G, 2);

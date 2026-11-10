@@ -902,17 +902,16 @@ impl DefaultShareValidator {
         // Shoal: the payout rule (`xbt_chain`), measured from this share's own XBT prev. The
         // acceptance gate only stores shares whose XBT prev is known, so an unknown one here is
         // a local share on a template the header store has not caught up with: retry later.
-        let eligibility = match crate::xbt_chain::eligibility(
-            &share.header.bitcoin_header.prev_blockhash,
-        ) {
-            None => None,
-            Some(Ok(eligibility)) => Some(eligibility),
-            Some(Err(error)) => {
-                return Err(ValidationError::unresolvable(format!(
-                    "Cannot place the share's XBT prev for the payout rule: {error}"
-                )));
-            }
-        };
+        let eligibility =
+            match crate::xbt_chain::eligibility(&share.header.bitcoin_header.prev_blockhash) {
+                None => None,
+                Some(Ok(eligibility)) => Some(eligibility),
+                Some(Err(error)) => {
+                    return Err(ValidationError::unresolvable(format!(
+                        "Cannot place the share's XBT prev for the payout rule: {error}"
+                    )));
+                }
+            };
 
         let mut window = pplns_window
             .write()
@@ -924,28 +923,29 @@ impl DefaultShareValidator {
                 Some(eligibility),
                 chain_store_handle,
             ),
-            None => window
-                .get_distribution_from_start_hash(share.header.prev_share_blockhash, chain_store_handle),
+            None => window.get_distribution_from_start_hash(
+                share.header.prev_share_blockhash,
+                chain_store_handle,
+            ),
         };
-        let address_difficulty_map = distribution
-            .map_err(|error| match error {
-                // Shoal: nothing in the window is on or next to this share's XBT chain.
-                WindowError::NothingEligible { .. } => ValidationError::consensus(format!(
-                    "Share pays a PPLNS window with no eligible share: {error}"
-                )),
-                // The anchor is below the confirmed entries this node's window
-                // retains, and the window's oldest entry only moves forward
-                // with the confirmed tip, so no retry can bring it back into
-                // range. Drop the share without a verdict.
-                WindowError::InsufficientEntries { .. } => ValidationError::unresolvable(format!(
-                    "Cannot resolve PPLNS window from prev_share_blockhash: {error}"
-                )),
-                // A store read failed or the ancestry is not stored yet; either
-                // may resolve later.
-                WindowError::ReadFailure(_) => ValidationError::recoverable(format!(
-                    "Failed to resolve PPLNS window from prev_share_blockhash: {error}"
-                )),
-            })?;
+        let address_difficulty_map = distribution.map_err(|error| match error {
+            // Shoal: nothing in the window is on or next to this share's XBT chain.
+            WindowError::NothingEligible { .. } => ValidationError::consensus(format!(
+                "Share pays a PPLNS window with no eligible share: {error}"
+            )),
+            // The anchor is below the confirmed entries this node's window
+            // retains, and the window's oldest entry only moves forward
+            // with the confirmed tip, so no retry can bring it back into
+            // range. Drop the share without a verdict.
+            WindowError::InsufficientEntries { .. } => ValidationError::unresolvable(format!(
+                "Cannot resolve PPLNS window from prev_share_blockhash: {error}"
+            )),
+            // A store read failed or the ancestry is not stored yet; either
+            // may resolve later.
+            WindowError::ReadFailure(_) => ValidationError::recoverable(format!(
+                "Failed to resolve PPLNS window from prev_share_blockhash: {error}"
+            )),
+        })?;
 
         // The total paid out is the bitcoin coinbase's own output total. The
         // admission gate has matched the coinbase to the proof of work, so this
@@ -953,6 +953,13 @@ impl DefaultShareValidator {
         // divide it as the PPLNS window says.
         let coinbase_value = bitcoin_coinbase_value(&share.bitcoin_coinbase)?;
 
+        // Shoal: the genesis share is never paid, so the first share of a chain has an empty
+        // window and may pay its remainder to any one address (`bootstrap_payee`).
+        let address_difficulty_map = if address_difficulty_map.is_empty() {
+            HashMap::from([(Self::bootstrap_payee(share, coinbase_value)?, 1u128)])
+        } else {
+            address_difficulty_map
+        };
         let expected_outputs =
             Self::build_expected_outputs(&share.header, &address_difficulty_map, coinbase_value)?;
         let expected_commitment_hash = ShareCommitment::from_share_block(share).hash();
@@ -1000,6 +1007,41 @@ impl DefaultShareValidator {
         } else {
             Ok(())
         }
+    }
+
+    /// Shoal: the payee of a share whose PPLNS window pays no one (it holds only the genesis
+    /// share): the coinbase output right after the donation and fee cuts. The rebuild in
+    /// `validate_bitcoin_payout` then checks that this one output takes the whole remainder.
+    fn bootstrap_payee(
+        share: &ShareBlock,
+        coinbase_value: u64,
+    ) -> Result<Address, ValidationError> {
+        let mut cuts = Vec::with_capacity(2);
+        let remaining = include_address_and_cut(
+            &mut cuts,
+            Amount::from_sat(coinbase_value),
+            &share.header.donation_address,
+            share.header.donation,
+        );
+        include_address_and_cut(
+            &mut cuts,
+            remaining,
+            &share.header.fee_address,
+            share.header.fee,
+        );
+        let output = share
+            .bitcoin_coinbase
+            .output
+            .get(cuts.len())
+            .ok_or_else(|| {
+                ValidationError::consensus("First share's coinbase has no payout output")
+            })?;
+        let network = crate::xbt_params::current_network().unwrap_or(bitcoin::Network::Bitcoin);
+        Address::from_script(&output.script_pubkey, network).map_err(|error| {
+            ValidationError::consensus(format!(
+                "First share's coinbase payout is not to an address: {error}"
+            ))
+        })
     }
 
     /// Build the expected payout outputs from share header donation/fee and PPLNS distribution.
@@ -3896,26 +3938,81 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_validate_bitcoin_payout_empty_window_returns_error() {
+    /// Shoal: a share whose coinbase pays `outputs`, checked against an empty window (one that
+    /// holds only the genesis share, which is never paid).
+    fn validate_against_empty_window(outputs: &[OutputPair]) -> Result<(), ValidationError> {
         let mut share_block = TestShareBlockBuilder::new()
             .miner_pubkey("020202020202020202020202020202020202020202020202020202020202020202")
             .build();
         share_block.header.bitcoin_height = 840_000;
+        let commitment_hash = ShareCommitment::from_share_block(&share_block).hash();
+        let coinbase_tx = build_bitcoin_coinbase_transaction(
+            Version::TWO,
+            outputs,
+            share_block.header.bitcoin_height as i64,
+            PushBytesBuf::from(&[0u8]),
+            None,
+            b"P2Poolv2",
+            Some(commitment_hash),
+            TEST_COINBASE_NSECS,
+            Some(&[0u8; EXTRANONCE1_SIZE + EXTRANONCE2_SIZE]),
+        )
+        .unwrap();
+        share_block.header.bitcoin_header.merkle_root = coinbase_tx.compute_txid().into();
+        share_block.bitcoin_coinbase = coinbase_tx;
 
-        // Mock PplnsWindow returning empty distribution
         let mut mock_window = PplnsWindow::default();
         mock_window
             .expect_get_distribution_from_start_hash()
             .returning(|_, _| Ok(HashMap::new()));
         let pplns_window = Arc::new(RwLock::new(mock_window));
+        validator().validate_bitcoin_payout(
+            &share_block,
+            &ChainStoreHandle::default(),
+            pplns_window,
+        )
+    }
 
-        let error = validator()
-            .validate_bitcoin_payout(&share_block, &ChainStoreHandle::default(), pplns_window)
-            .unwrap_err();
+    #[test]
+    fn shoal_first_share_may_pay_one_address_everything() {
+        let address = crate::test_utils::parse_address_from_string(
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+        );
+        let result = validate_against_empty_window(&[OutputPair {
+            address,
+            amount: Amount::from_sat(312_500_000),
+        }]);
         assert!(
-            error.to_string().contains("empty distribution"),
-            "Expected empty distribution error, got: {error}"
+            result.is_ok(),
+            "Expected valid first share, got: {}",
+            result.unwrap_err()
+        );
+    }
+
+    #[test]
+    fn shoal_first_share_may_not_split_its_payout() {
+        let address_a = crate::test_utils::parse_address_from_string(
+            "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+        );
+        let address_b = crate::test_utils::parse_address_from_string(
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        );
+        let error = validate_against_empty_window(&[
+            OutputPair {
+                address: address_a,
+                amount: Amount::from_sat(187_500_000),
+            },
+            OutputPair {
+                address: address_b,
+                amount: Amount::from_sat(125_000_000),
+            },
+        ])
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("PPLNS window and share fields imply"),
+            "Expected coinbase mismatch error, got: {error}"
         );
     }
 

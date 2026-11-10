@@ -109,6 +109,17 @@ Upstream's design `docs/architecture/mine-on-bitcoin-chain.md` (issue #652), imp
   target and how many of those blocks the node's XBT header store knows; flagged at 5 or more
   with none seen.
 - The start-up `getdifficulty` call is gone (Knots-BLAKE2b has no such RPC).
+- **The genesis share is never paid** (consensus change; every node must run it from the start
+  of a chain). Upstream pays the genesis share like any other, to the key in
+  `shares/genesis/mod.rs`, for as long as it is in the PPLNS window (14 days at 10 s shares).
+  Shoal pays no one for starting the chain: the genesis share keeps its slot and weighs 0
+  (`ConfirmedEntry::is_genesis` in `pplns_window.rs`, set from the share's header where entries
+  are loaded). A window that holds only the genesis share pays no one, so the first share of a
+  chain pays its whole remainder (after any donation and fee) to one address: the node's
+  `bootstrap_address` when it builds the job (`sharechain_pplns/payout.rs`), and validators
+  accept any single address there (`bootstrap_payee` in `shares/validation`). Upstream tests
+  whose first share stands for a share deep in a chain now build it on
+  `test_utils::below_window_parent()` instead of the all-zeros (genesis) parent.
 
 ## Attack test builds (milestone M5)
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
@@ -128,7 +139,7 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
 - `validation/share_headers.json`: each bitcoin header converted to v2 and re-mined to the target
   its share declares (the deliberately unmeetable `tight_target_header` is not mined).
 - `share_sync/*.json`: the first six shares of a real Shoal regtest run (M2: three nodes and
-  three CPU miners on xbt-lab, 2026-11-08), mined with regtest sharechain parameters, including
+  three CPU miners on xbt-lab, 2026-11-10, re-exported after the genesis-share change), mined with regtest sharechain parameters, including
   the 12-share window and maturity 4; their tests run in regtest mode.
 - `validation/stratum/{a,b,with_version_rolling}/submit.json`: re-mined Sia-dialect submissions
   for each recorded session's job (template, coinbase halves and extranonce1 unchanged).
@@ -140,7 +151,7 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
   integration test runs regtest parameters for its regtest fixture chain.
 - `p2poolv2_lib` re-exports `shoal_header`, so dependent crates use one version.
 
-Test status (2026-11-10, xbt-lab): `cargo test --workspace` 1,616 passed, 0 failed, 6 ignored
+Test status (2026-11-10, xbt-lab): `cargo test --workspace` 1,620 passed, 0 failed, 6 ignored
 (fixture tools and DNS-seed tests), with Shoal crates fetched from GitHub at the pinned rev.
 
 Known open items: Shoal DNS seeds (phase 3).

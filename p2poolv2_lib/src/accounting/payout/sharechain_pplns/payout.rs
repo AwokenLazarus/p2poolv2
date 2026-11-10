@@ -92,7 +92,7 @@ impl PayoutDistribution for Payout {
         _bitcoin_difficulty: u128,
         _total_amount: bitcoin::Amount,
         remaining_total_amount: Amount,
-        _bootstrap_address: Address,
+        bootstrap_address: Address,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if remaining_total_amount == Amount::ZERO {
             return Ok(());
@@ -132,6 +132,16 @@ impl PayoutDistribution for Payout {
         };
         let address_difficulty_map =
             window.get_distribution_for_paying(anchor, eligibility, chain_store_handle)?;
+
+        // Shoal: the genesis share is never paid, so the first share of a chain has nothing to
+        // pay; it pays this node's bootstrap address, and validators accept any one payee there.
+        if address_difficulty_map.is_empty() {
+            distribution.push(OutputPair {
+                address: bootstrap_address,
+                amount: remaining_total_amount,
+            });
+            return Ok(());
+        }
 
         append_proportional_distribution(
             &address_difficulty_map,
@@ -200,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_single_share_no_uncles() {
-        let genesis_hash = BlockHash::all_zeros();
+        let genesis_hash = crate::test_utils::below_window_parent();
         let header = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
         let miner_address = header.miner_bitcoin_address.to_string();
         let tip_hash = header.block_hash();
@@ -239,8 +249,50 @@ mod tests {
     }
 
     #[test]
-    fn test_two_shares_equal_work_no_uncles() {
+    fn shoal_first_share_pays_the_bootstrap_address() {
         let genesis_hash = BlockHash::all_zeros();
+        let header = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
+        let miner_address = header.miner_bitcoin_address.to_string();
+        let tip_hash = header.block_hash();
+
+        let confirmed_headers = vec![ConfirmedHeaderResult {
+            height: 0,
+            blockhash: tip_hash,
+            header: header.clone(),
+        }];
+
+        let mut mock = MockChainStoreHandle::default();
+        mock.expect_get_chain_tip().returning(move || Ok(tip_hash));
+        mock.expect_get_block_metadata().returning(move |_| {
+            Ok(BlockMetadata {
+                expected_height: Some(0),
+                chain_work: Work::from_le_bytes([0u8; 32]),
+                status: Status::BlockValid,
+                chain: ChainMembership::Confirmed,
+            })
+        });
+        mock.expect_get_confirmed_headers_in_range()
+            .returning(move |_, _| Ok(confirmed_headers.clone()));
+        mock.expect_get_share_headers()
+            .returning(|_| Ok(Vec::new()));
+
+        let mut payout = Payout::new(bitcoin::Network::Signet);
+        let config = make_test_config();
+        let total_amount = Amount::from_sat(100_000_000);
+        let result = payout
+            .get_output_distribution(&mock, tip_hash, u128::MAX, total_amount, &config)
+            .unwrap();
+
+        // The window holds only the genesis share, which is never paid.
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].amount, total_amount);
+        assert_eq!(result[0].address, *config.bootstrap_address());
+        assert_ne!(result[0].address.to_string(), miner_address);
+    }
+
+    #[test]
+    fn test_two_shares_equal_work_no_uncles() {
+        let genesis_hash = crate::test_utils::below_window_parent();
         let header1 = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
         let header2 = build_test_header(&header1.block_hash().to_string(), PUBKEY_2G, 2);
         let miner1 = header1.miner_bitcoin_address.to_string();
@@ -310,7 +362,7 @@ mod tests {
     /// cache tip and paid both miners.
     #[test]
     fn test_distribution_anchored_on_prev_excludes_newer_tip() {
-        let genesis_hash = BlockHash::all_zeros();
+        let genesis_hash = crate::test_utils::below_window_parent();
         let header1 = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);
         let header2 = build_test_header(&header1.block_hash().to_string(), PUBKEY_2G, 2);
         let miner1 = header1.miner_bitcoin_address.to_string();
@@ -366,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_share_with_one_uncle() {
-        let genesis_hash = BlockHash::all_zeros();
+        let genesis_hash = crate::test_utils::below_window_parent();
 
         // Uncle: a share not on the confirmed chain
         let uncle_header = build_test_header(&genesis_hash.to_string(), PUBKEY_3G, 2);
@@ -658,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_different_miners_with_uncles() {
-        let genesis_hash = BlockHash::all_zeros();
+        let genesis_hash = crate::test_utils::below_window_parent();
 
         // Miner A: confirmed share at height 0
         let header_a = build_test_header(&genesis_hash.to_string(), PUBKEY_G, 2);

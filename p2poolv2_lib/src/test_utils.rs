@@ -179,6 +179,13 @@ pub async fn setup_test_chain_store_handle(start_writer: bool) -> (ChainStoreHan
     (chain_handle, temp_dir)
 }
 
+/// Shoal: a parent for test chains that stand for shares deep in a sharechain, not its start.
+/// A share built on the all-zeros hash is a genesis share, which Shoal never pays.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn below_window_parent() -> bitcoin::BlockHash {
+    bitcoin::BlockHash::from_byte_array([1; 32])
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 pub fn genesis_for_tests() -> ShareBlock {
     TestShareBlockBuilder::new().build()
