@@ -47,8 +47,8 @@ upstream unchanged.
 - No built-in DNS seeds: upstream's `seed.testnet4.p2poolv2.org` is a Bitcoin P2Poolv2 host that
   an XBT node must never query. Shoal seeds come with its first public testnet; until then peers
   are configured with `dial_peers`.
-- Testnet4 and mainnet keep upstream's Bitcoin genesis anchors on purpose: an XBT node refuses
-  them (v1 header), so Shoal cannot run on those networks until XBT anchors are chosen.
+- Mainnet keeps upstream's Bitcoin genesis anchors on purpose: an XBT node refuses
+  them (v1 header), so Shoal cannot run on those networks until XBT anchors are chosen. (Testnet4: see phase 3.)
 
 ## Changes (milestone M2: three nodes)
 - Regtest PPLNS window of 12 shares with a maturity of 4 (`xbt_params::pplns_window_shares` and
@@ -96,6 +96,20 @@ Upstream's design `docs/architecture/mine-on-bitcoin-chain.md` (issue #652), imp
 - Active once the node opens the header store at start-up; unit tests that do not open one see
   upstream's behaviour. The attack test build does not open it (it plays a node without the rule).
 
+## Changes (phase 3: XBT testnet4 trial)
+- Testnet4 sharechain anchored to XBT testnet4 block 154,600
+  (`00000000dd483f2a5ed2a9f8ff481d9022827703a64df8686e8853a5ab67047f`, post-fork, v2 header).
+- Testnet4 genesis (ASERT anchor) target `0x1b06b3a1`: difficulty about 9,779, a 10 s share for
+  one 4.2 TH/s miner. `SHOAL_TESTNET4_GENESIS_TIME` / `SHOAL_TESTNET4_GENESIS_BITS` set the launch
+  time and target, as the regtest variables do (same value on every node; they change the
+  genesis hash).
+- Fix: outside regtest the genesis target always came from the mainnet entry; it now follows
+  the node's network.
+- `GET /withholding?num=N` (API): per miner, recent confirmed shares that met the XBT block
+  target and how many of those blocks the node's XBT header store knows; flagged at 5 or more
+  with none seen.
+- The start-up `getdifficulty` call is gone (Knots-BLAKE2b has no such RPC).
+
 ## Attack test builds (milestone M5)
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
   parent block, for the regtest test that shows what the sharechain pays for work that can never
@@ -126,7 +140,7 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
   integration test runs regtest parameters for its regtest fixture chain.
 - `p2poolv2_lib` re-exports `shoal_header`, so dependent crates use one version.
 
-Test status (2026-11-09, xbt-lab): `cargo test --workspace` 1,613 passed, 0 failed, 6 ignored
+Test status (2026-11-10, xbt-lab): `cargo test --workspace` 1,616 passed, 0 failed, 6 ignored
 (fixture tools and DNS-seed tests), with Shoal crates fetched from GitHub at the pinned rev.
 
-Known open items: XBT testnet4 anchor and Shoal DNS seeds (phase 3).
+Known open items: Shoal DNS seeds (phase 3).

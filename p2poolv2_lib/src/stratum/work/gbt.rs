@@ -152,10 +152,8 @@ pub async fn start_gbt(
         }
     };
 
-    // Print network difficulty at startup
-    if let Ok(difficulty) = bitcoind.get_difficulty().await {
-        debug!("Bitcoin network difficulty: {}", difficulty);
-    }
+    // Shoal: upstream logs `getdifficulty` here; Knots-BLAKE2b has no such RPC, so the call
+    // only logged a "Method not found" error at every start.
 
     tokio::spawn(async move {
         // first tick will happen instantly

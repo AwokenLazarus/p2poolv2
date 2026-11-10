@@ -165,14 +165,14 @@ pub async fn build_node(config: Config) -> Result<(NodeHandles, NodeRunner), Exi
     match p2poolv2_lib::xbt_params::init_regtest_genesis_from_env() {
         Ok((time, bits)) => {
             if let Some(time) = time {
-                info!("Regtest genesis (ASERT anchor) time set to {time}");
+                info!("Genesis (ASERT anchor) time set to {time}");
             }
             if let Some(bits) = bits {
-                info!("Regtest genesis (ASERT anchor) bits set to {bits:#010x}");
+                info!("Genesis (ASERT anchor) bits set to {bits:#010x}");
             }
         }
         Err(error) => {
-            error!("Invalid regtest genesis override: {error}");
+            error!("Invalid genesis override: {error}");
             return Err(ExitCode::FAILURE);
         }
     }

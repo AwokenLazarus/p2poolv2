@@ -150,11 +150,8 @@ pub fn anchor_target() -> CompactTarget {
     #[cfg(not(feature = "sim"))]
     {
         // Shoal: per-network anchor (regtest-easy on regtest); see xbt_params.
-        let network = if crate::xbt_params::is_regtest() {
-            bitcoin::Network::Regtest
-        } else {
-            bitcoin::Network::Bitcoin
-        };
+        // Upstream's anchor on every network without its own (also when no network is set).
+        let network = crate::xbt_params::current_network().unwrap_or(bitcoin::Network::Bitcoin);
         crate::xbt_params::anchor_target(network)
     }
 }

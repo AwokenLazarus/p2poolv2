@@ -106,6 +106,8 @@ fn build_router(app_state: Arc<AppState>, app_config: AppConfig) -> Router {
         .route("/share", get(endpoints::share::share))
         .route("/dag", get(endpoints::dag::dag))
         .route("/transaction", get(endpoints::transaction::transaction))
+        // Shoal: public block-withholding statistic.
+        .route("/withholding", get(endpoints::withholding::withholding))
         .route(
             "/share_headers",
             get(endpoints::share_headers::share_headers),

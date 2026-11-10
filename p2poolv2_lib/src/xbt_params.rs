@@ -37,6 +37,10 @@ pub const REGTEST_MAX_POOL_TARGET: u32 = 0x207f_ffff;
 /// sets its own with [`REGTEST_GENESIS_BITS_ENV`].
 pub const REGTEST_ANCHOR_TARGET: u32 = 0x1e0f_ffff;
 
+/// Genesis / ASERT anchor target on XBT testnet4: difficulty about 9,779, one share per 10 s for
+/// a single 4.2 TH/s S11, the hashrate of the trial run.
+pub const TESTNET4_ANCHOR_TARGET: u32 = 0x1b06_b3a1;
+
 /// Record the node's network. The first call wins; later calls with another network are
 /// ignored and return false.
 pub fn set_network(network: Network) -> bool {
@@ -56,7 +60,8 @@ pub fn set_network(network: Network) -> bool {
     }
 }
 
-fn network() -> Option<Network> {
+/// The network set with [`set_network`], if any.
+pub fn current_network() -> Option<Network> {
     #[cfg(not(test))]
     {
         NETWORK.get().copied()
@@ -69,7 +74,7 @@ fn network() -> Option<Network> {
 
 /// True when this process runs a regtest sharechain.
 pub fn is_regtest() -> bool {
-    network() == Some(Network::Regtest)
+    current_network() == Some(Network::Regtest)
 }
 
 /// The easiest target a share may declare on this node's network.
@@ -86,6 +91,9 @@ pub fn anchor_target(network: Network) -> CompactTarget {
     match network {
         Network::Regtest => CompactTarget::from_consensus(
             regtest_genesis_bits().unwrap_or(REGTEST_ANCHOR_TARGET),
+        ),
+        Network::Testnet4 => CompactTarget::from_consensus(
+            regtest_genesis_bits().unwrap_or(TESTNET4_ANCHOR_TARGET),
         ),
         _ => CompactTarget::from_consensus(0x1b41_88f5),
     }
@@ -105,6 +113,28 @@ pub const REGTEST_GENESIS_TIME_ENV: &str = "SHOAL_REGTEST_GENESIS_TIME";
 /// as [`REGTEST_GENESIS_TIME_ENV`]: one value per sharechain, it changes the genesis hash.
 pub const REGTEST_GENESIS_BITS_ENV: &str = "SHOAL_REGTEST_GENESIS_BITS";
 
+/// Testnet4's counterpart of [`REGTEST_GENESIS_TIME_ENV`]: a trial testnet4 sharechain sets its
+/// launch time here instead of in the binary. Same rules: every node of the sharechain uses the
+/// same value, and it changes the genesis hash.
+pub const TESTNET4_GENESIS_TIME_ENV: &str = "SHOAL_TESTNET4_GENESIS_TIME";
+
+/// Testnet4's counterpart of [`REGTEST_GENESIS_BITS_ENV`] (default [`TESTNET4_ANCHOR_TARGET`]).
+pub const TESTNET4_GENESIS_BITS_ENV: &str = "SHOAL_TESTNET4_GENESIS_BITS";
+
+/// True on the networks whose genesis time and bits may come from the environment.
+fn genesis_overridable() -> bool {
+    matches!(current_network(), Some(Network::Regtest | Network::Testnet4))
+}
+
+/// The environment variable names for the genesis time and bits on this node's network.
+fn genesis_env_names() -> (&'static str, &'static str) {
+    if current_network() == Some(Network::Testnet4) {
+        (TESTNET4_GENESIS_TIME_ENV, TESTNET4_GENESIS_BITS_ENV)
+    } else {
+        (REGTEST_GENESIS_TIME_ENV, REGTEST_GENESIS_BITS_ENV)
+    }
+}
+
 #[cfg(not(test))]
 static REGTEST_GENESIS_TIME: OnceLock<u32> = OnceLock::new();
 #[cfg(not(test))]
@@ -114,27 +144,29 @@ static REGTEST_GENESIS_BITS: OnceLock<u32> = OnceLock::new();
 /// (call after [`set_network`]). Returns the overrides in force. Ignored on other networks.
 /// Bits must be no easier than [`REGTEST_MAX_POOL_TARGET`].
 pub fn init_regtest_genesis_from_env() -> Result<(Option<u32>, Option<u32>), String> {
-    if !is_regtest() {
+    if !genesis_overridable() {
         return Ok((None, None));
     }
-    if let Ok(value) = std::env::var(REGTEST_GENESIS_TIME_ENV) {
+    let (time_env, bits_env) = genesis_env_names();
+    if let Ok(value) = std::env::var(time_env) {
         let time: u32 = value
             .trim()
             .parse()
-            .map_err(|e| format!("{REGTEST_GENESIS_TIME_ENV}={value:?}: {e}"))?;
+            .map_err(|e| format!("{time_env}={value:?}: {e}"))?;
         #[cfg(not(test))]
         REGTEST_GENESIS_TIME.get_or_init(|| time);
         let _ = time;
     }
-    if let Ok(value) = std::env::var(REGTEST_GENESIS_BITS_ENV) {
+    if let Ok(value) = std::env::var(bits_env) {
         let bits = u32::from_str_radix(value.trim().trim_start_matches("0x"), 16)
-            .map_err(|e| format!("{REGTEST_GENESIS_BITS_ENV}={value:?}: {e}"))?;
+            .map_err(|e| format!("{bits_env}={value:?}: {e}"))?;
         let target = bitcoin::Target::from_compact(CompactTarget::from_consensus(bits));
         let easiest =
-            bitcoin::Target::from_compact(CompactTarget::from_consensus(REGTEST_MAX_POOL_TARGET));
+            bitcoin::Target::from_compact(CompactTarget::from_consensus(max_pool_target()));
         if target > easiest || target == bitcoin::Target::ZERO {
             return Err(format!(
-                "{REGTEST_GENESIS_BITS_ENV}={value:?}: must be a nonzero target no easier than {REGTEST_MAX_POOL_TARGET:#x}"
+                "{bits_env}={value:?}: must be a nonzero target no easier than {:#x}",
+                max_pool_target()
             ));
         }
         #[cfg(not(test))]
@@ -147,7 +179,7 @@ pub fn init_regtest_genesis_from_env() -> Result<(Option<u32>, Option<u32>), Str
 pub fn regtest_genesis_bits() -> Option<u32> {
     #[cfg(not(test))]
     {
-        if is_regtest() {
+        if genesis_overridable() {
             return REGTEST_GENESIS_BITS.get().copied();
         }
     }
@@ -158,7 +190,7 @@ pub fn regtest_genesis_bits() -> Option<u32> {
 pub fn regtest_genesis_time() -> Option<u32> {
     #[cfg(not(test))]
     {
-        if is_regtest() {
+        if genesis_overridable() {
             return REGTEST_GENESIS_TIME.get().copied();
         }
     }
@@ -221,7 +253,8 @@ mod tests {
         let regtest_anchor = bitcoin::Target::from_compact(anchor_target(Network::Regtest));
         assert!(regtest_max > upstream);
         assert!(regtest_anchor > upstream && regtest_anchor < regtest_max);
-        assert_eq!(anchor_target(Network::Testnet4).to_consensus(), 0x1b41_88f5);
+        assert_eq!(anchor_target(Network::Bitcoin).to_consensus(), 0x1b41_88f5);
+        assert_eq!(anchor_target(Network::Testnet4).to_consensus(), TESTNET4_ANCHOR_TARGET);
     }
 
     #[test]

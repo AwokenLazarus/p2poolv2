@@ -39,15 +39,14 @@ const SIGNET_GENESIS_DATA: GenesisData = GenesisData {
     timestamp: 1776855600,
 };
 
-// Testnet4 block hash 0000000000a57b6dd9b7340a2e2cbb7069a0ccdf28f3db69070ea89d7287444b,
-// mined on previousblockhash 0000000000652fb23ade2b38f96257dc2b7d2cb487cc2344cac2d2546e5ceec5.
-// Shoal: still upstream's Bitcoin anchor. An XBT node refuses it (v1 header), so Shoal cannot
-// run on testnet4 until a real XBT testnet4 block is chosen here (phase 3).
+// XBT testnet4 block 154,600, hash
+// 00000000dd483f2a5ed2a9f8ff481d9022827703a64df8686e8853a5ab67047f.
+// Shoal: a real post-fork block (BLAKE2b, v2 header), the anchor of the trial testnet4 sharechain.
 const TESTNET4_GENESIS_DATA: GenesisData = GenesisData {
     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
     bitcoin_block: include_bytes!("testnet4.dat"),
-    bitcoin_height: 157012,
-    timestamp: 1792472400, // 10-20-2026T0500
+    bitcoin_height: 154600,
+    timestamp: 1794272400, // trial launch; set when the run starts
 };
 
 // Mainnet block hash 000000000000000000006fa29653a523d531657ad20d6f946d0fef88c97cd935,
@@ -111,15 +110,15 @@ mod tests {
     #[test]
     fn test_testnet4_genesis_block_hash() {
         let genesis = genesis_data(bitcoin::Network::Testnet4).unwrap();
-        let block = deserialize::<Block>(genesis.bitcoin_block).unwrap();
+        let block = deserialize::<shoal_header::XbtBlock>(genesis.bitcoin_block).unwrap();
 
         assert_eq!(
             block.block_hash(),
-            BlockHash::from_str("000000000000000216cf4048741d60335f27012c271df95ce43eb97a79357a40")
+            BlockHash::from_str("00000000dd483f2a5ed2a9f8ff481d9022827703a64df8686e8853a5ab67047f")
                 .unwrap()
         );
         assert!(block.check_merkle_root());
-        assert_eq!(block.bip34_block_height().unwrap(), genesis.bitcoin_height);
+        assert!(block.header.validate_pow(block.header.target()).is_ok());
     }
 
     #[test]
