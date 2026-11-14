@@ -37,9 +37,23 @@ pub const REGTEST_MAX_POOL_TARGET: u32 = 0x207f_ffff;
 /// sets its own with [`REGTEST_GENESIS_BITS_ENV`].
 pub const REGTEST_ANCHOR_TARGET: u32 = 0x1e0f_ffff;
 
-/// Genesis / ASERT anchor target on XBT testnet4: difficulty about 9,779, one share per 10 s for
-/// a single 4.2 TH/s S11, the hashrate of the trial run.
-pub const TESTNET4_ANCHOR_TARGET: u32 = 0x1b06_b3a1;
+/// The easiest share target on XBT testnet4: difficulty 1, the same as testnet4's
+/// minimum-difficulty blocks, so testers with CPUs or small miners can take part. ASERT (half-life
+/// 10 minutes) raises it within seconds when an ASIC joins. Upstream's floor (difficulty about
+/// 1,164) stays on every other network but regtest.
+pub const TESTNET4_MAX_POOL_TARGET: u32 = 0x1d00_ffff;
+
+/// Genesis / ASERT anchor target on XBT testnet4 (the public test sharechain): the floor, so
+/// whoever mines first finds shares at once and ASERT sets the pace from there.
+pub const TESTNET4_ANCHOR_TARGET: u32 = TESTNET4_MAX_POOL_TARGET;
+
+/// Genesis time of the public XBT testnet4 sharechain (Unix seconds), built in so a tester's node
+/// joins it without settings. [`TESTNET4_GENESIS_TIME_ENV`] still overrides it for a private
+/// trial chain.
+pub const TESTNET4_GENESIS_TIME: u32 = TESTNET4_LAUNCH;
+
+/// Launch time of the current public testnet4 sharechain.
+const TESTNET4_LAUNCH: u32 = 1_794_628_800; // 2026-11-14 04:00:00 UTC
 
 /// Record the node's network. The first call wins; later calls with another network are
 /// ignored and return false.
@@ -79,10 +93,10 @@ pub fn is_regtest() -> bool {
 
 /// The easiest target a share may declare on this node's network.
 pub fn max_pool_target() -> u32 {
-    if is_regtest() {
-        REGTEST_MAX_POOL_TARGET
-    } else {
-        crate::shares::share_block::MAX_POOL_TARGET
+    match current_network() {
+        Some(Network::Regtest) => REGTEST_MAX_POOL_TARGET,
+        Some(Network::Testnet4) => TESTNET4_MAX_POOL_TARGET,
+        _ => crate::shares::share_block::MAX_POOL_TARGET,
     }
 }
 
@@ -186,12 +200,17 @@ pub fn regtest_genesis_bits() -> Option<u32> {
     None
 }
 
-/// The regtest genesis time override, if set (never under `cfg(test)`).
+/// The genesis time override, if set: the environment variable, or on testnet4 the built-in
+/// [`TESTNET4_GENESIS_TIME`] (never under `cfg(test)`).
 pub fn regtest_genesis_time() -> Option<u32> {
     #[cfg(not(test))]
     {
         if genesis_overridable() {
-            return REGTEST_GENESIS_TIME.get().copied();
+            let set = REGTEST_GENESIS_TIME.get().copied();
+            if set.is_none() && current_network() == Some(Network::Testnet4) {
+                return Some(TESTNET4_GENESIS_TIME);
+            }
+            return set;
         }
     }
     None
@@ -217,25 +236,39 @@ pub const REGTEST_PPLNS_WINDOW_SHARES: usize = 12;
 /// Share depth before a share is paid on regtest (upstream's `COINBASE_MATURITY`, 6,048).
 pub const REGTEST_COINBASE_MATURITY: usize = 4;
 
+/// PPLNS window on XBT testnet4, in shares: one day at 10 s shares (upstream: 14 days), so a
+/// tester sees the window move within a test.
+pub const TESTNET4_PPLNS_WINDOW_SHARES: usize = 8_640;
+
+/// Share depth before a share is paid on XBT testnet4: one hour at 10 s shares (upstream: 6,048,
+/// about 17 hours), so a new tester's first payout comes within the hour.
+pub const TESTNET4_COINBASE_MATURITY: usize = 360;
+
 /// Shares a found block pays on `network`.
 ///
 /// Every node of one sharechain runs the same network, so they all compute the same window.
 pub fn pplns_window_shares(network: Network) -> usize {
     use crate::accounting::payout::sharechain_pplns::pplns_window::PPLNS_WINDOW_SHARES;
-    if network == Network::Regtest && !cfg!(feature = "sim") {
-        REGTEST_PPLNS_WINDOW_SHARES
-    } else {
-        PPLNS_WINDOW_SHARES
+    if cfg!(feature = "sim") {
+        return PPLNS_WINDOW_SHARES;
+    }
+    match network {
+        Network::Regtest => REGTEST_PPLNS_WINDOW_SHARES,
+        Network::Testnet4 => TESTNET4_PPLNS_WINDOW_SHARES,
+        _ => PPLNS_WINDOW_SHARES,
     }
 }
 
 /// Depth a share must reach before a found block pays it on `network`.
 pub fn coinbase_maturity(network: Network) -> usize {
     use crate::accounting::payout::sharechain_pplns::pplns_window::COINBASE_MATURITY;
-    if network == Network::Regtest && !cfg!(feature = "sim") {
-        REGTEST_COINBASE_MATURITY
-    } else {
-        COINBASE_MATURITY
+    if cfg!(feature = "sim") {
+        return COINBASE_MATURITY;
+    }
+    match network {
+        Network::Regtest => REGTEST_COINBASE_MATURITY,
+        Network::Testnet4 => TESTNET4_COINBASE_MATURITY,
+        _ => COINBASE_MATURITY,
     }
 }
 
@@ -258,6 +291,18 @@ mod tests {
     }
 
     #[test]
+    fn testnet4_floor_is_difficulty_one() {
+        assert!(set_network(Network::Testnet4));
+        assert_eq!(max_pool_target(), 0x1d00_ffff);
+        let floor = bitcoin::Target::from_compact(CompactTarget::from_consensus(max_pool_target()));
+        let upstream = bitcoin::Target::from_compact(CompactTarget::from_consensus(
+            crate::shares::share_block::MAX_POOL_TARGET,
+        ));
+        assert!(floor > upstream, "testnet4 shares may be easier than upstream's floor");
+        assert_eq!(anchor_target(Network::Testnet4).to_consensus(), max_pool_target());
+    }
+
+    #[test]
     fn only_regtest_divides_stratum_difficulty() {
         assert_eq!(stratum_difficulty_divisor(), 1);
         assert!(set_network(Network::Regtest));
@@ -270,13 +315,15 @@ mod tests {
     }
 
     #[test]
-    fn only_regtest_gets_the_short_window() {
+    fn only_test_networks_get_short_windows() {
         use crate::accounting::payout::sharechain_pplns::pplns_window::{
             COINBASE_MATURITY, PPLNS_WINDOW_SHARES,
         };
         assert_eq!(pplns_window_shares(Network::Regtest), REGTEST_PPLNS_WINDOW_SHARES);
         assert_eq!(coinbase_maturity(Network::Regtest), REGTEST_COINBASE_MATURITY);
-        for network in [Network::Bitcoin, Network::Testnet4, Network::Signet] {
+        assert_eq!(pplns_window_shares(Network::Testnet4), TESTNET4_PPLNS_WINDOW_SHARES);
+        assert_eq!(coinbase_maturity(Network::Testnet4), TESTNET4_COINBASE_MATURITY);
+        for network in [Network::Bitcoin, Network::Signet] {
             assert_eq!(pplns_window_shares(network), PPLNS_WINDOW_SHARES);
             assert_eq!(coinbase_maturity(network), COINBASE_MATURITY);
         }

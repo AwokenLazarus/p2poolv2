@@ -121,6 +121,18 @@ Upstream's design `docs/architecture/mine-on-bitcoin-chain.md` (issue #652), imp
   whose first share stands for a share deep in a chain now build it on
   `test_utils::below_window_parent()` instead of the all-zeros (genesis) parent.
 
+## Changes (phase 3: public testnet4 alpha)
+Consensus parameters of the public XBT testnet4 sharechain, which outside miners test (every
+node must run them; they make a new chain):
+- Share floor difficulty 1 (`TESTNET4_MAX_POOL_TARGET`, `0x1d00ffff`), the same as testnet4's
+  minimum-difficulty blocks, so CPUs and small miners can take part; the genesis (ASERT anchor)
+  target is the floor. Upstream's floor (difficulty about 1,164) stays on other networks.
+- PPLNS window 8,640 shares (one day at 10 s) and maturity 360 shares (one hour), so a new
+  miner's first payout comes within the hour (upstream: 120,960 and 6,048, about 17 hours).
+- The genesis time is built in (`TESTNET4_GENESIS_TIME`, 2026-11-14 04:00 UTC), so a node
+  joins without settings. `SHOAL_TESTNET4_GENESIS_TIME` / `_BITS` still make a private trial
+  chain.
+
 ## Attack test builds (milestone M5)
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
   parent block, for the regtest test that shows what the sharechain pays for work that can never
@@ -151,7 +163,7 @@ Regenerated with `p2poolv2_lib/src/xbt_fixtures.rs` (ignored tests, run by hand)
   integration test runs regtest parameters for its regtest fixture chain.
 - `p2poolv2_lib` re-exports `shoal_header`, so dependent crates use one version.
 
-Test status (2026-11-10, xbt-lab): `cargo test --workspace` 1,620 passed, 0 failed, 6 ignored
+Test status (2026-11-14, xbt-lab): `cargo test --workspace` 1,621 passed, 0 failed, 6 ignored
 (fixture tools and DNS-seed tests), with Shoal crates fetched from GitHub at the pinned rev.
 
 Known open items: Shoal DNS seeds (phase 3).
