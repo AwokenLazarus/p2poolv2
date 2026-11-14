@@ -127,6 +127,9 @@ node must run them; they make a new chain):
 - Share floor difficulty 1 (`TESTNET4_MAX_POOL_TARGET`, `0x1d00ffff`), the same as testnet4's
   minimum-difficulty blocks, so CPUs and small miners can take part; the genesis (ASERT anchor)
   target is the floor. Upstream's floor (difficulty about 1,164) stays on other networks.
+  ASERT's own ceiling (`pool_difficulty::max_target_consensus`) is that floor too on regtest and
+  testnet4; with upstream's ceiling (about difficulty 1,000) no share at the floor was ever
+  accepted onto the chain.
 - PPLNS window 8,640 shares (one day at 10 s) and maturity 360 shares (one hour), so a new
   miner's first payout comes within the hour (upstream: 120,960 and 6,048, about 17 hours).
 - The genesis time is built in (`TESTNET4_GENESIS_TIME`, 2026-11-14 04:00 UTC), so a node

@@ -39,13 +39,15 @@ use crate::sim_overrides;
 /// `CompactTarget::from_consensus` is not a const fn.
 const MAX_TARGET_CONSENSUS: u32 = 0x1b4188f5;
 
-/// Shoal: the ASERT ceiling for this node's network. Upstream's value everywhere except
-/// regtest, which gets the regtest-easy ceiling (see `xbt_params`).
+/// Shoal: the ASERT ceiling for this node's network. Upstream's value everywhere except the
+/// networks with their own share floor (regtest and testnet4, see `xbt_params`), where the
+/// ceiling is that floor: a lower ceiling would hold shares above the floor for ever.
 fn max_target_consensus() -> u32 {
-    if crate::xbt_params::is_regtest() {
-        crate::xbt_params::REGTEST_MAX_POOL_TARGET
-    } else {
-        MAX_TARGET_CONSENSUS
+    match crate::xbt_params::current_network() {
+        Some(bitcoin::Network::Regtest | bitcoin::Network::Testnet4) => {
+            crate::xbt_params::max_pool_target()
+        }
+        _ => MAX_TARGET_CONSENSUS,
     }
 }
 
@@ -399,6 +401,26 @@ mod tests {
     // =======================================================================
     // ASERT algorithm tests
     // =======================================================================
+
+    /// Shoal: on testnet4 a chain behind schedule relaxes to the difficulty-1 floor, not to
+    /// upstream's ceiling (about difficulty 1,000), and the first share after genesis is within
+    /// 2% of the floor.
+    #[test]
+    fn shoal_testnet4_asert_ceiling_is_the_share_floor() {
+        assert!(crate::xbt_params::set_network(bitcoin::Network::Testnet4));
+        let floor = CompactTarget::from_consensus(crate::xbt_params::TESTNET4_MAX_POOL_TARGET);
+        let pool_difficulty = PoolDifficulty::new(floor, 1_794_628_800, 0);
+        // An hour with no shares: fully relaxed.
+        assert_eq!(
+            pool_difficulty.calculate_target_clamped(1_794_628_800 + 3_600, 0),
+            floor
+        );
+        // The first share (parent = genesis): 10 s ahead of schedule, about 1% harder.
+        let first = Target::from_compact(pool_difficulty.calculate_target_clamped(1_794_628_800, 0));
+        let floor_target = Target::from_compact(floor);
+        assert!(first <= floor_target);
+        assert!(first.difficulty_float() < floor_target.difficulty_float() * 1.02);
+    }
 
     #[test]
     fn test_asert_on_schedule_returns_anchor_target() {
