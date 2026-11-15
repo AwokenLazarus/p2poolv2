@@ -136,6 +136,11 @@ node must run them; they make a new chain):
   joins without settings. `SHOAL_TESTNET4_GENESIS_TIME` / `_BITS` still make a private trial
   chain.
 
+Not consensus:
+- `dial_peers` takes names (`/dns4/<host>/tcp/<port>`): the TCP transport is wrapped in
+  libp2p's system DNS resolver (`node/mod.rs`). Upstream's transport refused them ("Multiaddr
+  is not supported"), so a bootstrap peer on a changing address could not be named.
+
 ## Attack test builds (milestone M5)
 - Cargo feature `shoal-attack-dead-template` (lib and node): every job builds on a fabricated XBT
   parent block, for the regtest test that shows what the sharechain pays for work that can never

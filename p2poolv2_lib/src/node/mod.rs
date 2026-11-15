@@ -169,7 +169,11 @@ impl Node {
             }
         };
 
-        let transport = libp2p::tcp::Transport::<libp2p::tcp::tokio::Tcp>::new(tcp_config.clone())
+        // Shoal: resolve /dns4, /dns6 and /dns addresses in `dial_peers` with the system
+        // resolver. Upstream's TCP-only transport refuses them ("Multiaddr is not
+        // supported"), so a bootstrap peer could only be named by IP address.
+        let tcp = libp2p::tcp::Transport::<libp2p::tcp::tokio::Tcp>::new(tcp_config.clone());
+        let transport = libp2p::dns::tokio::Transport::system(tcp)?
             .upgrade(libp2p::core::upgrade::Version::V1)
             .authenticate(noise_config)
             .multiplex(libp2p::yamux::Config::default())
